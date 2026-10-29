@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#102b36" />
+    <title>Prueba real Oracle a Parquet</title>
+    <link rel="stylesheet" href="/css/probe.css" />
+  </head>
+  <body>
+    <main class="card">
+      <a class="back" href="/">← Volver a Oracle a Parquet</a>
+      <p class="eyebrow">PRUEBA LOCAL · SOLO LECTURA</p>
+      <h1>Conectar y exportar una muestra real</h1>
+      <p class="intro">Elige un esquema visible para la conexión y una de sus tablas. La prueba lee hasta 1.000 filas, crea un Parquet temporal y comprueba que PyArrow pueda abrirlo. El archivo se borra al terminar.</p>
+      <dl class="details">
+        <div><dt>Conexión</dt><dd id="connection">Consultando catálogo Oracle…</dd></div>
+        <div><dt>Límite</dt><dd>1.000 filas</dd></div>
+        <div><dt>Destino</dt><dd>Temporal; disponible para descargar por 15 minutos</dd></div>
+      </dl>
+      <div class="selectors">
+        <label for="schema">Esquema</label>
+        <select id="schema" disabled><option>Cargando esquemas…</option></select>
+        <label for="table">Tabla</label>
+        <select id="table" disabled><option>Selecciona un esquema</option></select>
+        <p id="table-hint" class="hint" aria-live="polite">Se muestran los esquemas y tablas visibles para la cuenta Oracle configurada en <code>.env</code>.</p>
+      </div>
+      <button id="run" type="button">Probar conexión y exportación</button>
+      <p id="status" class="status" role="status" aria-live="polite">Esperando inicio.</p>
+      <section id="result" class="result" hidden aria-live="polite">
+        <h2>Prueba completada</h2>
+        <div class="metrics">
+          <div><span>Filas</span><strong id="rows">—</strong></div>
+          <div><span>Columnas</span><strong id="columns">—</strong></div>
+          <div><span>Parquet</span><strong id="bytes">—</strong></div>
+          <div><span>Tiempo Oracle→Parquet</span><strong id="elapsed">—</strong></div>
+        </div>
+        <p id="verification"></p>
+        <a id="download-link" class="download-link" hidden>Descargar muestra Parquet</a>
+        <p class="privacy">No se muestran valores. El archivo temporal se borra al descargarlo o en 15 minutos.</p>
+      </section>
+      <section class="full-export" aria-labelledby="full-title">
+        <h2 id="full-title">Exportar la tabla completa</h2>
+        <p>Lee todas las filas de la tabla seleccionada y conserva el Parquet en <code>output/exports</code>. Antes de empezar se estiman el tamaño de la tabla y el espacio disponible.</p>
+        <button id="run-full" type="button" disabled>Exportar todos los registros</button>
+        <p id="full-status" class="status" role="status" aria-live="polite">Selecciona un esquema y una tabla.</p>
+        <div id="full-job" class="full-job" hidden>
+          <progress id="full-progress" max="100" value="0"></progress>
+          <p id="full-counts"></p>
+          <p id="full-output" class="privacy"></p>
+          <a id="full-download" class="download-link" hidden>Descargar Parquet completo</a>
+        </div>
+      </section>
+      <p id="error" class="error" role="alert" hidden></p>
+    </main>
+    <script type="module">
+      const button = document.querySelector("#run");
+      const status = document.querySelector("#status");
+      const result = document.querySelector("#result");
+      const errorBox = document.querySelector("#error");
+      const fullButton = document.querySelector("#run-full");
+      const fullStatus = document.querySelector("#full-status");
+      const fullJob = document.querySelector("#full-job");
+      const schemaSelect = document.querySelector("#schema");
+      const tableSelect = document.querySelector("#table");
+      const tableHint = document.querySelector("#table-hint");
+      const number = (value) => new Intl.NumberFormat("es-EC").format(value);
+      const setOptions = (select, items, placeholder, valueOf, labelOf) => {
+        select.replaceChildren(new Option(placeholder, ""));
+        for (const item of items) select.add(new Option(labelOf(item), valueOf(item)));
+      };
+      async function loadTables() {
+        tableSelect.disabled = true;
+        button.disabled = true;
+        tableHint.textContent = "Consultando tablas visibles…";
+        try {
+          const response = await fetch(`/api/v1/schemas/${encodeURIComponent(schemaSelect.value)}/tables`);
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error || "No se pudieron cargar las tablas.");
+          setOptions(tableSelect, body.items || [], "Selecciona una tabla", (item) => item.name, (item) => item.name);
+          tableSelect.disabled = false;
+          tableHint.textContent = `${body.items?.length ?? 0} tablas disponibles en ${schemaSelect.value}.`;
+          if (body.items?.length) tableSelect.value = body.items[0].name;
+          button.disabled = !tableSelect.value;
+          fullButton.disabled = !tableSelect.value;
+        } catch (error) {
+          setOptions(tableSelect, [], "No se pudieron cargar");
+          tableHint.textContent = error.message;
+        }
+      }
+      async function loadSchemas() {
+        try {
+          const response = await fetch("/api/v1/schemas");
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error || "No se pudo consultar Oracle.");
+          setOptions(schemaSelect, body.items || [], "Selecciona un esquema", (item) => item.name, (item) => item.name);
+          schemaSelect.disabled = false;
+          document.querySelector("#connection").textContent = `${body.items?.length ?? 0} esquemas visibles en Oracle`;
+          if (body.items?.length) {
+            schemaSelect.value = body.items.find((item) => item.name === "SIS")?.name ?? body.items[0].name;
+            await loadTables();
+          } else {
+            document.querySelector("#connection").textContent = "No hay esquemas visibles para esta cuenta";
+          }
+        } catch (error) {
+          document.querySelector("#connection").textContent = "Error de conexión";
+          errorBox.textContent = error.message;
+          errorBox.hidden = false;
+        }
+      }
+      schemaSelect.addEventListener("change", loadTables);
+      tableSelect.addEventListener("change", () => {
+        button.disabled = !tableSelect.value;
+        fullButton.disabled = !tableSelect.value;
+      });
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        result.hidden = true;
+        document.querySelector("#download-link").hidden = true;
+        errorBox.hidden = true;
+        status.textContent = "Conectando a Oracle y preparando el Parquet…";
+        try {
+          const response = await fetch("/api/v1/connection-test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ schema: schemaSelect.value, table: tableSelect.value }),
+          });
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error || "Falló la prueba local.");
+          document.querySelector("#rows").textContent = number(body.rows);
+          document.querySelector("#columns").textContent = number(body.columns);
+          document.querySelector("#bytes").textContent = `${number(body.bytes)} B`;
+          document.querySelector("#elapsed").textContent = `${body.elapsed_ms.toFixed(3)} ms`;
+          document.querySelector("#verification").textContent = body.verification;
+          const downloadLink = document.querySelector("#download-link");
+          downloadLink.href = body.download_url;
+          downloadLink.download = `${body.schema}_${body.table}_muestra.parquet`;
+          downloadLink.hidden = false;
+          result.hidden = false;
+          status.textContent = "Oracle respondió y el archivo Parquet se verificó.";
+        } catch (error) {
+          errorBox.textContent = error.message;
+          errorBox.hidden = false;
+          status.textContent = "No se pudo completar la prueba.";
+        } finally {
+          button.disabled = false;
+        }
+      });
+      async function pollFullExport(id, estimatedRows) {
+        try {
+          const response = await fetch(`/api/v1/full-exports/${encodeURIComponent(id)}`);
+          const job = await response.json();
+          if (!response.ok) throw new Error(job.error || "No se pudo consultar el progreso.");
+          const rows = job.rows_processed ?? 0;
+          document.querySelector("#full-counts").textContent = `${number(rows)} filas procesadas${estimatedRows ? ` de ${number(estimatedRows)} estimadas` : ""} · lote ${number(job.current_batch ?? 0)}`;
+          const pct = job.state === "completed" ? 100 : estimatedRows ? Math.min(99, Math.floor(rows * 100 / estimatedRows)) : 0;
+          document.querySelector("#full-progress").value = pct;
+          fullStatus.textContent = ({ queued: "En cola…", connecting: "Conectando a Oracle…", reading: "Leyendo y escribiendo…", writing: "Leyendo y escribiendo…", completed: "Exportación completa y verificada.", failed: job.error || "La exportación falló." })[job.state] ?? job.state;
+          if (job.state === "completed") {
+            document.querySelector("#full-output").textContent = `${job.output_file} · ${formatBytes(job.bytes_written)} · ${job.columns} columnas`;
+            const link = document.querySelector("#full-download");
+            link.href = job.download_url;
+            link.download = `${job.schema}_${job.table}.parquet`;
+            link.hidden = false;
+            fullButton.disabled = false;
+            button.disabled = false;
+            return;
+          }
+          if (job.state === "failed") { fullButton.disabled = false; button.disabled = false; return; }
+          setTimeout(() => pollFullExport(id, estimatedRows), 1500);
+        } catch (error) {
+          fullStatus.textContent = error.message;
+          fullButton.disabled = false;
+          button.disabled = false;
+        }
+      }
+      fullButton.addEventListener("click", async () => {
+        fullButton.disabled = true;
+        button.disabled = true;
+        errorBox.hidden = true;
+        fullJob.hidden = false;
+        document.querySelector("#full-download").hidden = true;
+        document.querySelector("#full-progress").value = 0;
+        fullStatus.textContent = "Consultando estimación y preparando la exportación completa…";
+        try {
+          const response = await fetch("/api/v1/full-exports", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ schema: schemaSelect.value, table: tableSelect.value }),
+          });
+          const body = await response.json();
+          if (!response.ok) {
+            let message = body.error || "No se pudo iniciar la exportación.";
+            if (body.estimated_rows != null) message += ` Estimación: ${number(body.estimated_rows)} filas, ${formatBytes(body.estimated_raw_bytes)}; libres: ${formatBytes(body.free_bytes)}.`;
+            throw new Error(message);
+          }
+          const stale = body.statistics_last_analyzed ? ` Estadísticas al ${new Date(body.statistics_last_analyzed).toLocaleDateString("es-EC")}.` : "";
+          fullStatus.textContent = `Estimación: ${number(body.estimated_rows)} filas, ${formatBytes(body.estimated_raw_bytes)} sin comprimir; libres: ${formatBytes(body.free_bytes)}.${stale}`;
+          document.querySelector("#full-output").textContent = `Destino: ${body.output_directory}`;
+          pollFullExport(body.id, body.estimated_rows);
+        } catch (error) {
+          fullStatus.textContent = error.message;
+          fullButton.disabled = false;
+          button.disabled = false;
+        }
+      });
+      loadSchemas();
+    </script>
+  </body>
+</html>

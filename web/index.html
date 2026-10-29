@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#102b36" />
+    <title>Oracle a Parquet</title>
+    <link rel="stylesheet" href="/css/app.css" />
+    <script type="module" src="/js/app.js"></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand" href="#inicio" aria-label="Oracle a Parquet, inicio">
+          <span class="brand-mark" aria-hidden="true">O<span>→</span>P</span>
+          <span>Oracle <span class="muted">a</span> Parquet</span>
+        </a>
+        <div class="mode-pill"><span class="pulse-dot" aria-hidden="true"></span><span id="mode-label">Modo demostración</span></div>
+      </header>
+
+      <p style="margin: 12px 0 0; text-align: right"><a href="/probe" style="color:#087f69;font-weight:650">Probar conexión Oracle real (máx. 1.000 filas) →</a></p>
+
+      <section class="intro" id="inicio">
+        <div>
+          <p class="eyebrow">EXPORTACIÓN LOCAL · ORACLE 11G</p>
+          <h1>Prepara tu exportación</h1>
+          <p class="intro-copy">Selecciona una tabla, define el destino y sigue el avance de los archivos Parquet.</p>
+        </div>
+        <div class="connection-state"><span class="state-icon" aria-hidden="true">⌁</span><span><strong>Conexión</strong><small id="connection-label">Backend simulado</small></span></div>
+      </section>
+
+      <div class="workspace">
+        <section class="panel setup-panel" aria-labelledby="setup-title">
+          <div class="panel-heading">
+            <div><span class="step-label">PASO 1 — CONFIGURACIÓN</span><h2 id="setup-title">Origen y destino</h2></div>
+            <span class="heading-icon" aria-hidden="true">↗</span>
+          </div>
+
+          <form id="export-form" novalidate>
+            <label for="schema">Esquema</label>
+            <div class="select-wrap"><select id="schema" name="schema" required disabled><option value="">Cargando esquemas…</option></select><span aria-hidden="true">⌄</span></div>
+
+            <label for="table">Tabla</label>
+            <div class="select-wrap"><select id="table" name="table" required disabled><option value="">Selecciona un esquema</option></select><span aria-hidden="true">⌄</span></div>
+            <p class="field-hint" id="table-hint" aria-live="polite">El catálogo se carga desde el backend local.</p>
+
+            <div class="field-row">
+              <div class="field-grow">
+                <label for="destination">Directorio destino</label>
+                <input id="destination" name="destination" type="text" value="./output" placeholder="/ruta/permitida/exportaciones" autocomplete="off" required />
+              </div>
+              <span class="folder-icon" aria-hidden="true">▱</span>
+            </div>
+            <p class="field-hint">El backend validará que la ruta esté dentro del directorio permitido.</p>
+
+            <label for="batch-size">Filas por lote</label>
+            <div class="batch-control"><input id="batch-size" name="batch_size" type="number" min="1" max="50000" step="1000" value="10000" required /><span>filas</span><span class="batch-range">1 – 50.000</span></div>
+            <p class="field-hint">Un lote moderado ayuda a mantener estable el uso de memoria.</p>
+
+            <div id="form-error" class="inline-error" role="alert" hidden></div>
+            <button class="primary-button" id="start-button" type="submit" disabled><span aria-hidden="true">▶</span> Iniciar exportación</button>
+          </form>
+
+          <div class="privacy-note"><span aria-hidden="true">♧</span><p>La interfaz no almacena credenciales. La conexión Oracle pertenece al backend local.</p></div>
+        </section>
+
+        <section class="panel progress-panel" aria-labelledby="progress-title">
+          <div class="panel-heading progress-heading">
+            <div><span class="step-label">PASO 2 — SEGUIMIENTO</span><h2 id="progress-title">Progreso</h2></div>
+            <span id="status-badge" class="status-badge status-idle"><span class="status-dot"></span><span id="status-text">En espera</span></span>
+          </div>
+
+          <div id="empty-state" class="empty-state">
+            <div class="empty-art" aria-hidden="true"><span class="art-database">▤</span><span class="art-arrow">→</span><span class="art-file">▧</span></div>
+            <h3>Tu exportación aparecerá aquí</h3>
+            <p>Elige una tabla y comienza. Verás los registros, la velocidad y cada archivo generado.</p>
+          </div>
+
+          <div id="job-state" hidden>
+            <div class="job-title"><span class="table-icon" aria-hidden="true">▦</span><div><strong id="job-table">—</strong><small id="job-destination">—</small></div></div>
+            <div class="progress-track" role="progressbar" aria-label="Progreso de exportación" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="progress-bar" class="progress-bar"></div></div>
+            <div class="progress-caption"><span id="progress-caption">Preparando…</span><span id="progress-percent">0%</span></div>
+
+            <div class="metrics-grid">
+              <article class="metric"><span class="metric-icon mint" aria-hidden="true">↧</span><div><small>Registros procesados</small><strong id="metric-rows">0</strong></div></article>
+              <article class="metric"><span class="metric-icon blue" aria-hidden="true">⌁</span><div><small>Velocidad</small><strong id="metric-speed">0 <em>filas/s</em></strong></div></article>
+              <article class="metric"><span class="metric-icon violet" aria-hidden="true">▧</span><div><small>Archivos Parquet</small><strong id="metric-files">0</strong></div></article>
+              <article class="metric"><span class="metric-icon amber" aria-hidden="true">◷</span><div><small>Datos escritos</small><strong id="metric-bytes">0 B</strong></div></article>
+            </div>
+
+            <div class="job-footer"><span>Tiempo <strong id="metric-time">00:00</strong></span><span>Lote <strong id="metric-batch">0</strong></span><button id="cancel-button" class="cancel-button" type="button" hidden>Cancelar exportación</button></div>
+            <div id="job-error" class="job-error" role="alert" hidden></div>
+          </div>
+          <div class="progress-footnote"><span class="pulse-dot" aria-hidden="true"></span><span id="progress-footnote">Polling local cada 1,5 segundos</span></div>
+        </section>
+      </div>
+
+      <footer class="page-footer"><span>Oracle → lotes controlados → Parquet</span><span>Procesamiento local · Solo lectura</span></footer>
+    </main>
+  </body>
+</html>
+http://127.0.0.1:8765

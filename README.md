@@ -4,7 +4,15 @@ Aplicación local para explorar tablas Oracle, extraer filas por lotes y escribi
 
 ## Estado
 
-El proyecto está en fase de estructura. La arquitectura y las dependencias de OCI/ODPI-C y Parquet deben quedar acordadas antes de implementar los adaptadores.
+Los contratos, el adaptador Oracle, el runner y un escritor Arrow/Parquet están
+conectados en un sondeo local acotado. Se verificó la exportación de 1.000 filas
+Oracle a un Parquet legible. La pantalla de prueba web local carga esquemas y
+tablas visibles en Oracle (incluido SIS cuando hay acceso), probar una muestra
+de hasta 1.000 filas y descargar el Parquet temporal, o exportar una tabla
+completa a `output/exports`; el dashboard principal continúa en modo
+demostración y la API general con exportación multiparte sigue pendiente.
+Consulta [`docs/architecture/integration.md`](docs/architecture/integration.md)
+para el estado y los límites actuales.
 
 ## Flujo previsto
 
