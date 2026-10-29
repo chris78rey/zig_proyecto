@@ -1,0 +1,15 @@
+# Zig build output
+.zig-cache/
+zig-out/
+
+# Runtime data and local credentials
+logs/*
+output/*
+config/*.local.*
+.env
+.env.*
+!.env.example
+
+# Generated Graphify data stays local unless intentionally exported
+graphify-out/
+
