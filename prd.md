@@ -18,7 +18,7 @@ RAC_NODO2=
   (DESCRIPTION=
     (ADDRESS=
       (PROTOCOL=TCP)
-      (HOST=[ORACLE_HOST])
+       (HOST=[ORACLE_HOST])
       (PORT=1521)
     )
     (CONNECT_DATA=
@@ -37,7 +37,7 @@ TABLEAU.ANALISISLABORATORIO esta en 11g r2 de oracle
 
 
 1. Respecto a la conexión desde Zig hacia Oracle RAC 11gR2, ¿cómo debemos conectarnos al nodo indicado?
-a) Conectarnos directamente usando HOST=[ORACLE_HOST], PORT=1521 y SID=prdsgh2 mediante OCI/ODPI-C. **(RECOMENDADA)**
+a) Conectarnos directamente usando HOST=[ORACLE_HOST], PORT=1521 y SID=[ORACLE_SID] mediante OCI/ODPI-C. **(RECOMENDADA)**
 
 2. Respecto a la lectura completa de TABLEAU.ANALISISLABORATORIO cada vez que se ejecute el proceso, ¿cómo recorreremos los millones de registros?
 

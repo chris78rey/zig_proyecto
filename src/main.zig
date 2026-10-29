@@ -18,6 +18,8 @@ pub fn main(init: std.process.Init) !void {
     const started = std.Io.Clock.awake.now(init.io);
     const username = init.environ_map.get("ORACLE_USER") orelse return missingCredentials();
     const password = init.environ_map.get("ORACLE_PASSWORD") orelse return missingCredentials();
+    const host = init.environ_map.get("ORACLE_HOST") orelse return missingOracleConfig();
+    const sid = init.environ_map.get("ORACLE_SID") orelse return missingOracleConfig();
     const directory = init.environ_map.get("PARQUET_OUTPUT_DIR") orelse {
         std.debug.print("Falta PARQUET_OUTPUT_DIR; indica un directorio local de salida.\n", .{});
         return error.MissingOutputDirectory;
@@ -32,7 +34,19 @@ pub fn main(init: std.process.Init) !void {
         (if (std.ascii.eqlIgnoreCase(raw, "all")) null else std.fmt.parseInt(u32, raw, 10) catch return error.InvalidRowLimit)
     else
         1_000;
-    const config = oracle.config.Config{ .username = username, .password = password, .fetch_array_size = fetch_size, .max_rows = max_rows };
+    const port = if (init.environ_map.get("ORACLE_PORT")) |raw|
+        std.fmt.parseInt(u16, raw, 10) catch return error.InvalidOraclePort
+    else
+        1521;
+    const config = oracle.config.Config{
+        .username = username,
+        .password = password,
+        .host = host,
+        .port = port,
+        .endpoint = .{ .sid = sid },
+        .fetch_array_size = fetch_size,
+        .max_rows = max_rows,
+    };
     const connection = oracle.source.OracleSource.connect(init.gpa, config) catch |err| {
         std.debug.print("Falló la conexión Oracle ({s}); no se inició la exportación.\n", .{@errorName(err)});
         return error.OracleConnectionFailed;
@@ -70,4 +84,9 @@ pub fn main(init: std.process.Init) !void {
 fn missingCredentials() error{MissingCredentials} {
     std.debug.print("Faltan ORACLE_USER y ORACLE_PASSWORD en el entorno local.\n", .{});
     return error.MissingCredentials;
+}
+
+fn missingOracleConfig() error{MissingOracleConfig} {
+    std.debug.print("Faltan ORACLE_HOST y ORACLE_SID en el entorno local.\n", .{});
+    return error.MissingOracleConfig;
 }

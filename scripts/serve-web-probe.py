@@ -59,9 +59,14 @@ full_export_running = False
 def oracle_connection():
     user = os.environ.get("ORACLE_USER", "")
     password = os.environ.get("ORACLE_PASSWORD", "")
+    host = os.environ.get("ORACLE_HOST", "")
+    sid = os.environ.get("ORACLE_SID", "")
     if not user or not password:
         raise RuntimeError("missing Oracle credentials")
-    dsn = oracledb.makedsn("[ORACLE_HOST]", 1521, sid="prdsgh2")
+    if not host or not sid:
+        raise RuntimeError("missing Oracle host or SID configuration")
+    port = int(os.environ.get("ORACLE_PORT", "1521"))
+    dsn = oracledb.makedsn(host, port, sid=sid)
     return oracledb.connect(user=user, password=password, dsn=dsn)
 
 

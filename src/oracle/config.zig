@@ -10,7 +10,7 @@ pub const Endpoint = union(enum) {
 pub const Config = struct {
     username: []const u8,
     password: []const u8,
-    host: []const u8 = "[ORACLE_HOST]",
+    host: []const u8,
     port: u16 = 1521,
     endpoint: Endpoint = .{ .sid = "prdsgh2" },
     fetch_array_size: u32 = 10_000,

@@ -22,7 +22,7 @@ RAC_NODO2=
   (DESCRIPTION=
     (ADDRESS=
       (PROTOCOL=TCP)
-      (HOST=[ORACLE_HOST])
+       (HOST=[ORACLE_HOST])
       (PORT=1521)
     )
     (CONNECT_DATA=
@@ -75,7 +75,7 @@ Para acceder a Oracle, utilizar interoperabilidad mediante **OCI y preferentemen
 La aplicación debe conectarse inicialmente directamente al nodo:
 
 ```text
-[ORACLE_HOST]:1521/prdsgh2
+[ORACLE_HOST]:1521/[ORACLE_SID]
 ```
 
 La arquitectura debe quedar preparada para que posteriormente pueda utilizarse una cadena TNS, SERVICE_NAME o SCAN de Oracle RAC si fuese necesario.
@@ -383,7 +383,7 @@ Zig
 ↓
 ODPI-C
 ↓
-[ORACLE_HOST]:1521/prdsgh2
+[ORACLE_HOST]:1521/[ORACLE_SID]
 ↓
 SELECT sobre TABLEAU.ANALISISLABORATORIO
 ↓

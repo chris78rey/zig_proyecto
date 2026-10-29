@@ -18,7 +18,7 @@ para el estado y los límites actuales.
 
 Interfaz web local → API local en Zig → orquestador de exportación → fuente Oracle (OCI/ODPI-C) → lotes de filas → escritor Parquet.
 
-La conexión Oracle será de solo lectura. Las credenciales y la configuración local no se guardarán en Git.
+La conexión Oracle será de solo lectura. Las credenciales y la configuración local no se guardarán en Git. Copia `.env.example` a `.env` y define el host, SID y credenciales de tu entorno antes de ejecutar la prueba local.
 
 ## Módulos
 
