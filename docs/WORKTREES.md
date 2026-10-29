@@ -19,10 +19,18 @@ Evitar que dos worktrees editen los mismos archivos. Cambios a `src/models` o al
 
 ## Orden propuesto
 
-1. Definir `Column`, `Value`, `Batch`, errores y estados de exportación en `src/models`.
-2. Definir contrato HTTP para listar esquemas/tablas, iniciar una exportación, consultar progreso y cancelar.
+1. Contratos base definidos en `src/models/{types,batch,interfaces}.zig`; ver `docs/architecture/contracts.md` para tipos, errores, propiedad de memoria y ciclo de vida.
+2. Contrato HTTP v1 definido en `docs/architecture/http-api.md`: catálogo, inicio, polling de progreso y cancelación.
 3. Crear worktrees `work/oracle`, `work/parquet` y `work/web` desde el mismo commit de base.
 4. Integrar primero adaptadores; después conectarlos en `src/export` y probar el flujo completo.
+
+### Decisiones de contrato aprobadas
+
+- Oracle entrega lotes prestados; la escritura de cada lote es síncrona y no lo retiene.
+- `NUMBER` conserva precisión como decimal textual canónico; SQL NULL se representa explícitamente.
+- La API usa prefijo `/api/v1`, polling inicial y escucha loopback por defecto.
+- El destino de exportación queda sujeto a una raíz local permitida; la API no debe aceptar rutas arbitrarias.
+- Compatibilidad/versiones/licencias de ODPI-C/OCI y del escritor Parquet siguen pendientes y no se agregan dependencias en esta fase.
 
 ## Creación de worktrees
 
