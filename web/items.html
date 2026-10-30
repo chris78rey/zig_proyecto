@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#102b36" />
+    <title>Consultar SIS.ITEMS</title>
+    <link rel="stylesheet" href="/css/items.css" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <div class="page-toolbar"><a class="back-link" href="/">← Volver a Oracle a Parquet</a><button id="logout-button" class="logout-button" type="button">Cerrar sesión</button></div>
+      <a class="back-link page-switch" href="/items/compare">Comparar descripciones →</a>
+      <a class="back-link page-switch" href="/items/review" target="_blank" rel="noopener">Ventana de expertos ↗</a>
+      <section class="panel">
+        <p class="eyebrow">CONSULTA DE INVENTARIO</p>
+        <h1>Registros de SIS.ITEMS</h1>
+        <p class="intro">Filtra por el tipo disponible y genera un Excel con todos los campos de los registros seleccionados.</p>
+
+        <form id="items-form">
+          <label for="tipo">Tipo de artículo</label>
+          <select id="tipo" name="tipo" required disabled>
+            <option value="">Cargando tipos disponibles…</option>
+          </select>
+          <p id="type-count" class="hint" aria-live="polite"></p>
+          <button id="export-button" type="submit" disabled>Generar Excel</button>
+        </form>
+
+        <section id="export-status" class="status-card" aria-live="polite" hidden>
+          <strong id="status-title">Preparando archivo…</strong>
+          <p id="status-message">Conectando con Oracle.</p>
+          <progress id="progress" max="100" value="0"></progress>
+          <a id="download-link" class="download-link" hidden>Descargar Excel</a>
+        </section>
+        <p id="error-message" class="error-message" role="alert" hidden></p>
+      </section>
+      <footer>Conexión local de solo lectura · Oracle → Zig → Excel</footer>
+    </main>
+    <script>
+      const form = document.querySelector("#items-form");
+      document.querySelector("#logout-button").addEventListener("click", async () => {
+        const button = document.querySelector("#logout-button");
+        button.disabled = true;
+        try {
+          const response = await fetch("/api/v1/logout", { method: "POST" });
+          if (!response.ok) throw new Error("No se pudo cerrar la sesión.");
+          location.replace("/login");
+        } catch (error) {
+          button.disabled = false;
+          const message = document.querySelector("#error-message");
+          message.textContent = error.message;
+          message.hidden = false;
+        }
+      });
+      const tipoSelect = document.querySelector("#tipo");
+      const typeCount = document.querySelector("#type-count");
+      const exportButton = document.querySelector("#export-button");
+      const statusCard = document.querySelector("#export-status");
+      const statusTitle = document.querySelector("#status-title");
+      const statusMessage = document.querySelector("#status-message");
+      const progress = document.querySelector("#progress");
+      const downloadLink = document.querySelector("#download-link");
+      const errorMessage = document.querySelector("#error-message");
+      const number = value => new Intl.NumberFormat("es-EC").format(value);
+
+      async function loadTypes() {
+        try {
+          const response = await fetch("/api/v1/items/types");
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error || "No se pudo cargar el catálogo.");
+          tipoSelect.replaceChildren(new Option("Selecciona un tipo", ""));
+          for (const item of body.items) {
+            tipoSelect.add(new Option(`${item.tipo} · ${number(item.rows)} registros`, item.tipo));
+          }
+          tipoSelect.disabled = body.items.length === 0;
+          typeCount.textContent = body.items.length ? `${body.items.length} tipos disponibles en SIS.ITEMS.` : "La tabla no tiene tipos disponibles.";
+        } catch (error) {
+          tipoSelect.replaceChildren(new Option("No se pudo cargar el catálogo", ""));
+          errorMessage.textContent = error.message;
+          errorMessage.hidden = false;
+        }
+      }
+
+      tipoSelect.addEventListener("change", () => {
+        exportButton.disabled = !tipoSelect.value;
+        statusCard.hidden = true;
+        downloadLink.hidden = true;
+        errorMessage.hidden = true;
+      });
+
+      async function poll(job) {
+        try {
+          const response = await fetch(`/api/v1/items/exports/${encodeURIComponent(job.id)}`);
+          const state = await response.json();
+          if (!response.ok) throw new Error(state.error || "No se pudo consultar la exportación.");
+          progress.value = state.expected_rows ? Math.min(99, state.rows_processed * 100 / state.expected_rows) : 0;
+          statusTitle.textContent = state.state === "writing" ? "Preparando Excel…" : "Extrayendo registros…";
+          statusMessage.textContent = `${number(state.rows_processed)} de ${number(state.expected_rows)} registros · lote ${number(state.current_batch)}`;
+          if (state.state === "completed") {
+            progress.value = 100;
+            statusTitle.textContent = "Excel listo";
+            statusMessage.textContent = `${number(state.rows_processed)} registros y ${state.columns} campos.`;
+            downloadLink.href = state.download_url;
+            downloadLink.download = state.filename;
+            downloadLink.hidden = false;
+            exportButton.disabled = false;
+            return;
+          }
+          if (state.state === "failed") throw new Error(state.error || "La exportación falló.");
+          setTimeout(() => poll(job), 1200);
+        } catch (error) {
+          errorMessage.textContent = error.message;
+          errorMessage.hidden = false;
+          exportButton.disabled = false;
+        }
+      }
+
+      form.addEventListener("submit", async event => {
+        event.preventDefault();
+        exportButton.disabled = true;
+        errorMessage.hidden = true;
+        downloadLink.hidden = true;
+        statusCard.hidden = false;
+        progress.value = 0;
+        statusTitle.textContent = "Iniciando exportación…";
+        statusMessage.textContent = "Zig leerá los registros del tipo seleccionado.";
+        try {
+          const response = await fetch("/api/v1/items/exports", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tipo: tipoSelect.value }),
+          });
+          const job = await response.json();
+          if (!response.ok) throw new Error(job.error || "No se pudo iniciar la exportación.");
+          poll(job);
+        } catch (error) {
+          errorMessage.textContent = error.message;
+          errorMessage.hidden = false;
+          exportButton.disabled = false;
+        }
+      });
+
+      loadTypes();
+    </script>
+  </body>
+</html>

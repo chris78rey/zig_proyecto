@@ -34,6 +34,11 @@ pub fn main(init: std.process.Init) !void {
         (if (std.ascii.eqlIgnoreCase(raw, "all")) null else std.fmt.parseInt(u32, raw, 10) catch return error.InvalidRowLimit)
     else
         1_000;
+    const filter_column = init.environ_map.get("ORACLE_FILTER_COLUMN");
+    const filter: ?oracle.config.Filter = if (filter_column) |column| blk: {
+        const value = init.environ_map.get("ORACLE_FILTER_VALUE") orelse return error.InvalidOracleFilter;
+        break :blk .{ .column = column, .value = value };
+    } else if (init.environ_map.get("ORACLE_FILTER_VALUE") != null) return error.InvalidOracleFilter else null;
     const port = if (init.environ_map.get("ORACLE_PORT")) |raw|
         std.fmt.parseInt(u16, raw, 10) catch return error.InvalidOraclePort
     else
@@ -46,6 +51,7 @@ pub fn main(init: std.process.Init) !void {
         .endpoint = .{ .sid = sid },
         .fetch_array_size = fetch_size,
         .max_rows = max_rows,
+        .filter = filter,
     };
     const connection = oracle.source.OracleSource.connect(init.gpa, config) catch |err| {
         std.debug.print("Falló la conexión Oracle ({s}); no se inició la exportación.\n", .{@errorName(err)});

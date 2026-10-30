@@ -2,6 +2,7 @@ const std = @import("std");
 const api = @import("odpi_api.zig").c;
 const models = @import("models");
 const Config = @import("config.zig").Config;
+const Filter = @import("config.zig").Filter;
 const sql = @import("sql.zig");
 
 const types = models.types;
@@ -23,6 +24,7 @@ pub const OracleSource = struct {
     columns: []const types.Column = &.{},
     fetch_array_size: u32,
     max_rows: ?u32,
+    filter: ?Filter,
     sequence: u64 = 0,
     closed: bool = false,
     diagnostic: OracleDiagnostic = .{},
@@ -40,6 +42,7 @@ pub const OracleSource = struct {
             .connection = undefined,
             .fetch_array_size = cfg.fetch_array_size,
             .max_rows = cfg.max_rows,
+            .filter = cfg.filter,
             .batch_arena = std.heap.ArenaAllocator.init(allocator),
             .catalog_arena = std.heap.ArenaAllocator.init(allocator),
             .metadata_arena = std.heap.ArenaAllocator.init(allocator),
@@ -150,10 +153,15 @@ pub const OracleSource = struct {
         const arena = self.sql_arena.allocator();
         const schema = sql.quoteIdentifier(arena, table.schema) catch return error.InvalidArgument;
         const table_name = sql.quoteIdentifier(arena, table.table) catch return error.InvalidArgument;
+        const base_query = if (self.filter) |filter| blk: {
+            const column = sql.quoteIdentifier(arena, filter.column) catch return error.InvalidArgument;
+            const value = sql.quoteLiteral(arena, filter.value) catch return error.InvalidArgument;
+            break :blk std.fmt.allocPrint(arena, "SELECT * FROM {s}.{s} WHERE {s} = {s}", .{ schema, table_name, column, value }) catch return error.OutOfMemory;
+        } else std.fmt.allocPrint(arena, "SELECT * FROM {s}.{s}", .{ schema, table_name }) catch return error.OutOfMemory;
         const query = if (self.max_rows) |limit|
-            std.fmt.allocPrint(arena, "SELECT * FROM {s}.{s} WHERE ROWNUM <= {d}", .{ schema, table_name, limit }) catch return error.OutOfMemory
+            std.fmt.allocPrint(arena, "SELECT * FROM ({s}) WHERE ROWNUM <= {d}", .{ base_query, limit }) catch return error.OutOfMemory
         else
-            std.fmt.allocPrint(arena, "SELECT * FROM {s}.{s}", .{ schema, table_name }) catch return error.OutOfMemory;
+            base_query;
         const statement = try self.prepare(query);
         errdefer self.releaseStatement(statement);
         if (api.dpiStmt_setFetchArraySize(statement, self.fetch_array_size) < 0) return self.failSource();

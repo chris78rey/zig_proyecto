@@ -1,0 +1,866 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#102b36" />
+    <title>Comparar descripciones de SIS.ITEMS</title>
+    <link rel="stylesheet" href="/css/items.css" />
+  </head>
+  <body>
+    <main class="page-shell compare-shell">
+      <div class="page-toolbar"><span class="back-link">Comparación de descripciones · SIS.ITEMS</span><button id="logout-button" class="logout-button" type="button">Cerrar sesión</button></div>
+      <a class="review-window-link" href="/items/review" target="_blank" rel="noopener">Abrir ventana de revisión para expertos ↗</a>
+      <p id="review-only-banner" class="review-only-banner" hidden><span id="review-banner-text">VENTANA DE EXPERTOS · Corridas guardadas y revisión por grupos</span><button id="change-run" class="secondary-button" type="button" hidden>Elegir otra corrida</button></p>
+      <section id="runner-panel" class="panel">
+        <p class="eyebrow">REVISIÓN HUMANA · SOLO LECTURA</p>
+        <h1>Comparar descripciones</h1>
+        <p class="intro">Busca artículos con nombres parecidos. Cada candidato muestra sus cuatro campos de clave primaria para que el equipo decida si son el mismo artículo y cuál clave conservar.</p>
+
+        <form id="compare-form" class="compare-form">
+          <label for="tipo">Tipo de artículo</label>
+          <select id="tipo" required disabled><option value="">Cargando tipos…</option></select>
+          <p class="hint">Se comparan registros dentro del mismo TIPO, que forma parte de la clave primaria.</p>
+          <label for="threshold">Similitud mínima <output id="threshold-value">85</output>%</label>
+          <input id="threshold" type="range" min="70" max="98" step="1" value="85" />
+          <p class="hint">El puntaje ordena candidatos; no significa que sean duplicados confirmados.</p>
+          <label for="auto-same-threshold">Sugerir «Mismo artículo» desde <output id="auto-same-threshold-value">94</output>%</label>
+          <input id="auto-same-threshold" type="range" min="70" max="100" step="1" value="94" />
+          <p class="hint">Debe ser igual o mayor a «Similitud mínima». Solo Christian Ruiz configura este valor; se guarda en la corrida y no registra decisiones automáticamente.</p>
+          <button id="compare-button" type="submit" disabled>Buscar descripciones parecidas</button>
+        </form>
+        <p id="reviewer-notice" class="review-note" hidden>Estás en modo de revisión: puedes abrir las corridas guardadas y registrar decisiones. La creación de corridas corresponde a Christian Ruiz.</p>
+
+        <section id="compare-status" class="status-card" aria-live="polite" hidden>
+          <strong id="status-title">Preparando comparación…</strong>
+          <p id="status-message">Zig leerá los registros de SIS.ITEMS.</p>
+          <progress id="progress" max="100" value="0"></progress>
+        </section>
+        <p id="error-message" class="error-message" role="alert" hidden></p>
+        <section class="saved-runs" aria-labelledby="saved-runs-title">
+          <div class="saved-runs-heading"><h2 id="saved-runs-title">Corridas guardadas</h2><button id="refresh-runs" class="secondary-button" type="button">Actualizar</button></div>
+          <p>Abre una corrida para que los expertos confirmen grupos de artículos iguales.</p>
+          <div id="saved-runs-list" class="saved-runs-list" aria-live="polite">Cargando historial…</div>
+        </section>
+      </section>
+
+      <section id="results-section" class="results-section" hidden>
+        <div class="results-heading">
+          <div><p class="eyebrow">REVISIÓN</p><h2 id="results-title">Grupos por revisar</h2></div>
+          <span id="results-count" class="results-count"></span>
+        </div>
+        <div id="pair-review-view" hidden>
+        <p class="review-note">Marca cada par como igual o diferente. Si es igual, elige la clave primaria que se conservará. Al guardar, el par sale de Pendientes; puedes consultarlo luego con el filtro de revisados. La app registra usuario y fecha en SQLite; Oracle no se modifica.</p>
+        <form id="key-filters" class="key-filters">
+          <p class="filter-title">Filtrar por clave primaria <span>El valor puede aparecer en el artículo A o B</span></p>
+          <div class="filter-fields">
+            <label>TIPO<input name="TIPO" maxlength="80" placeholder="Ej. I"></label>
+            <label>SBS_SCC_CODIGO<input name="SBS_SCC_CODIGO" maxlength="80" placeholder="Código"></label>
+            <label>SBS_CODIGO<input name="SBS_CODIGO" maxlength="80" placeholder="Código"></label>
+            <label>CODIGO<input name="CODIGO" maxlength="80" placeholder="Código"></label>
+          </div>
+          <div class="filter-actions">
+            <label class="decision-filter">Decisión<select name="decision"><option value="pending" selected>Pendientes</option><option value="all">Todos</option><option value="same">Mismo artículo</option><option value="different">Artículos diferentes</option></select></label>
+            <button type="submit">Aplicar filtros</button>
+            <button id="clear-filters" class="secondary-button" type="button">Limpiar</button>
+          </div>
+        </form>
+        <p id="review-feedback" class="review-feedback" aria-live="polite" hidden></p>
+        <div id="results-list" class="results-list"></div>
+        <nav id="results-pagination" class="results-pagination" aria-label="Páginas de candidatos" hidden>
+          <button id="previous-page" type="button">← Anterior</button>
+          <div id="page-numbers" class="page-numbers" aria-label="Números de página"></div>
+          <span id="page-label"></span>
+          <button id="next-page" type="button">Siguiente →</button>
+        </nav>
+        </div>
+        <section id="group-review-view" class="group-review-view">
+          <section id="assignment-tools" class="assignment-tools" hidden>
+            <div><strong>Asignar grupos con Excel</strong><p>La plantilla tiene una fila por grupo y un menú para elegir usuario Oracle. Los artículos y sus claves aparecen en una hoja separada de consulta.</p></div>
+            <a id="assignment-template" class="download-link" download>Descargar plantilla de asignación</a>
+            <form id="assignment-import-form" class="assignment-import-form">
+              <label for="assignment-file">Cargar plantilla completada</label>
+              <div class="assignment-controls"><input id="assignment-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required><button type="submit">Guardar asignaciones</button></div>
+            </form>
+            <p id="assignment-import-message" class="assignment-import-message" role="status" hidden></p>
+          </section>
+          <div class="groups-heading">
+            <div><p class="eyebrow">REVISIÓN POR GRUPOS</p><h3>Artículos conectados por similitud alta</h3><p>Dentro de cada grupo puedes crear tantos subgrupos como necesites: confirma dos o más artículos juntos y los que queden pendientes pueden formar otro subgrupo. Si uno no se va a empatar dentro del grupo, pulsa “No empatar”. Las decisiones quedan auditadas y se pueden reabrir.</p></div>
+          </div>
+          <p id="group-summary" class="resolution-progress" role="status"></p>
+          <form id="group-filters" class="group-filters">
+            <label>Estado del grupo<select name="decision"><option value="pending" selected>Pendientes</option><option value="all">Todos</option><option value="unify">Mismo artículo</option><option value="skip">No empatar</option></select></label>
+            <button type="submit">Aplicar filtro</button>
+          </form>
+          <p id="group-feedback" class="review-feedback" role="status" hidden></p>
+          <div id="groups-list" class="groups-list" aria-live="polite"></div>
+          <nav id="groups-pagination" class="results-pagination" aria-label="Páginas de grupos" hidden>
+            <button id="groups-previous" type="button">← Anterior</button>
+            <div id="groups-page-numbers" class="page-numbers"></div>
+            <span id="groups-page-label"></span>
+            <button id="groups-next" type="button">Siguiente →</button>
+          </nav>
+        </section>
+      </section>
+      <footer>Clave primaria: TIPO + SBS_SCC_CODIGO + SBS_CODIGO + CODIGO</footer>
+    </main>
+    <script>
+      const form = document.querySelector("#compare-form");
+      const typeSelect = document.querySelector("#tipo");
+      const threshold = document.querySelector("#threshold");
+      const thresholdValue = document.querySelector("#threshold-value");
+      const autoSameThreshold = document.querySelector("#auto-same-threshold");
+      const autoSameThresholdValue = document.querySelector("#auto-same-threshold-value");
+      const compareButton = document.querySelector("#compare-button");
+      const statusCard = document.querySelector("#compare-status");
+      const statusTitle = document.querySelector("#status-title");
+      const statusMessage = document.querySelector("#status-message");
+      const progress = document.querySelector("#progress");
+      const errorMessage = document.querySelector("#error-message");
+      const resultsSection = document.querySelector("#results-section");
+      const resultsTitle = document.querySelector("#results-title");
+      const resultsCount = document.querySelector("#results-count");
+      const resultsList = document.querySelector("#results-list");
+      const pagination = document.querySelector("#results-pagination");
+      const previousPage = document.querySelector("#previous-page");
+      const nextPage = document.querySelector("#next-page");
+      const pageLabel = document.querySelector("#page-label");
+      const pageNumbers = document.querySelector("#page-numbers");
+      const filterForm = document.querySelector("#key-filters");
+      const reviewFeedback = document.querySelector("#review-feedback");
+      const assignmentTools = document.querySelector("#assignment-tools");
+      const assignmentImportForm = document.querySelector("#assignment-import-form");
+      const assignmentFile = document.querySelector("#assignment-file");
+      const assignmentImportMessage = document.querySelector("#assignment-import-message");
+      const assignmentTemplate = document.querySelector("#assignment-template");
+      const pairView = document.querySelector("#pair-review-view");
+      const groupView = document.querySelector("#group-review-view");
+      const groupFilters = document.querySelector("#group-filters");
+      const groupSummary = document.querySelector("#group-summary");
+      const groupsList = document.querySelector("#groups-list");
+      const groupFeedback = document.querySelector("#group-feedback");
+      const groupsPagination = document.querySelector("#groups-pagination");
+      const groupsPrevious = document.querySelector("#groups-previous");
+      const groupsNext = document.querySelector("#groups-next");
+      const groupsPageNumbers = document.querySelector("#groups-page-numbers");
+      const groupsPageLabel = document.querySelector("#groups-page-label");
+      document.querySelector("#logout-button").addEventListener("click", async () => {
+        const button = document.querySelector("#logout-button");
+        button.disabled = true;
+        try {
+          const response = await fetch("/api/v1/logout", { method: "POST" });
+          if (!response.ok) throw new Error("No se pudo cerrar la sesión.");
+          location.replace("/login");
+        } catch (error) {
+          button.disabled = false;
+          errorMessage.textContent = error.message;
+          errorMessage.hidden = false;
+        }
+      });
+      const number = value => new Intl.NumberFormat("es-EC").format(value);
+      const pkFields = ["TIPO", "SBS_SCC_CODIGO", "SBS_CODIGO", "CODIGO"];
+      let currentAutoSameThreshold = 94;
+      const reviewMode = location.pathname === "/items/review";
+      let canDeleteRuns = false;
+      let currentJobId = null;
+      let currentPage = 1;
+      let totalPages = 1;
+      let filteredCandidateCount = 0;
+      let currentGroupPage = 1;
+      let totalGroupPages = 1;
+      function currentFilters() {
+        const values = new FormData(filterForm);
+        const query = new URLSearchParams();
+        for (const field of [...pkFields, "decision"]) {
+          const value = String(values.get(field) || "").trim();
+          if (value) query.set(field === "decision" ? "decision" : `f_${field}`, value);
+        }
+        return query.toString();
+      }
+
+      function text(tag, className, value) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        node.textContent = value == null || value === "" ? "—" : String(value);
+        return node;
+      }
+
+      async function loadTypes() {
+        try {
+          const response = await fetch("/api/v1/items/types");
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error || "No se pudo cargar el catálogo.");
+          typeSelect.replaceChildren(new Option("Selecciona un tipo", ""));
+          for (const item of body.items) typeSelect.add(new Option(`${item.tipo} · ${number(item.rows)} registros`, item.tipo));
+          typeSelect.disabled = body.items.length === 0;
+        } catch (error) {
+          typeSelect.replaceChildren(new Option("No se pudo cargar el catálogo", ""));
+          errorMessage.textContent = error.message;
+          errorMessage.hidden = false;
+        }
+      }
+
+      function syncAutoSameThresholdMinimum() {
+        autoSameThreshold.min = threshold.value;
+        if (Number(autoSameThreshold.value) < Number(threshold.value)) {
+          autoSameThreshold.value = threshold.value;
+          autoSameThresholdValue.value = threshold.value;
+          autoSameThresholdValue.textContent = threshold.value;
+        }
+      }
+      threshold.addEventListener("input", () => {
+        thresholdValue.value = threshold.value;
+        thresholdValue.textContent = threshold.value;
+        syncAutoSameThresholdMinimum();
+      });
+      autoSameThreshold.addEventListener("input", () => { autoSameThresholdValue.value = autoSameThreshold.value; autoSameThresholdValue.textContent = autoSameThreshold.value; });
+      syncAutoSameThresholdMinimum();
+      typeSelect.addEventListener("change", () => { compareButton.disabled = !typeSelect.value; resultsSection.hidden = true; errorMessage.hidden = true; });
+
+      function buildItemCard(label, item) {
+        const card = document.createElement("article");
+        card.className = "item-card";
+        card.append(text("span", "item-label", label));
+        card.append(text("h3", "item-description", item.DESCRIPCION));
+        const key = document.createElement("dl");
+        key.className = "key-list";
+        for (const field of pkFields) {
+          key.append(text("dt", "", field));
+          key.append(text("dd", "", item[field]));
+        }
+        card.append(key);
+        const details = [`Unidad: ${item.UNIDAD || "—"}`, `Estado: ${item.ESTADO || "—"}`, `Stock 1: ${item.STOCK1 || "0"}`];
+        card.append(text("p", "item-details", details.join(" · ")));
+        const rawPrice = item.PRECIO_DE_VENTA;
+        const hasPrice = rawPrice !== null && rawPrice !== undefined && String(rawPrice).trim() !== "";
+        const isZeroPrice = hasPrice && Number(rawPrice) === 0;
+        const price = document.createElement("p");
+        price.className = `item-price${isZeroPrice ? " item-price-zero" : ""}`;
+        price.append(text("span", "", "Precio de venta"));
+        price.append(text("strong", "", hasPrice ? new Intl.NumberFormat("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(Number(rawPrice)) : "No disponible"));
+        card.append(price);
+        return card;
+      }
+
+      function renderPair(pair, index, jobId, offset) {
+        const wrapper = document.createElement("article");
+        wrapper.className = "match-card";
+        const heading = document.createElement("div");
+        heading.className = "match-heading";
+        heading.append(text("strong", "", `Similitud ${pair.score}%`));
+        heading.append(text("span", "", `Candidato ${offset + index + 1}`));
+        wrapper.append(heading);
+        const suggestedSame = !pair.decision && Number(pair.score) >= currentAutoSameThreshold;
+        if (suggestedSame) {
+          wrapper.append(text("p", "same-suggestion", `Sugerencia: posible mismo artículo (similitud ≥${currentAutoSameThreshold}%). Confirma la decisión y elige la clave que se conservará.`));
+        }
+        const pairGrid = document.createElement("div");
+        pairGrid.className = "pair-grid";
+        pairGrid.append(buildItemCard("ARTÍCULO A", pair.a), buildItemCard("ARTÍCULO B", pair.b));
+        wrapper.append(pairGrid);
+        if (pair.assignment?.assigned_to) {
+          wrapper.append(text("p", "assignment-label", `Asignado a ${pair.assignment.assigned_to} · por ${pair.assignment.assigned_by} · ${pair.assignment.assigned_at}`));
+        }
+        if (pair.price_difference?.delta != null) {
+          const delta = Number(pair.price_difference.delta);
+          const money = value => new Intl.NumberFormat("es-EC", { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(value);
+          const difference = text("p", `price-difference${pair.price_difference.high_difference ? " price-difference-high" : ""}`,
+            `Diferencia de precio (B − A): ${delta > 0 ? "+" : ""}${money(delta)}`);
+          if (pair.price_difference.percentage_vs_a != null) {
+            const percentage = Number(pair.price_difference.percentage_vs_a);
+            const formattedPercentage = new Intl.NumberFormat("es-EC", { minimumFractionDigits: 1, maximumFractionDigits: 2 }).format(percentage);
+            difference.append(document.createElement("br"), document.createTextNode(`Variación respecto a A: ${percentage > 0 ? "+" : ""}${formattedPercentage}%`));
+          } else if (pair.price_difference.high_difference) {
+            difference.append(document.createElement("br"), document.createTextNode("Variación mayor al 15%: precio A es 0 y precio B es distinto de 0"));
+          } else {
+            difference.append(document.createElement("br"), document.createTextNode("Variación respecto a A: 0,0%"));
+          }
+          if (pair.price_difference.high_difference) difference.prepend(document.createTextNode("⚠ DIFERENCIA ALTA · "));
+          wrapper.append(difference);
+        }
+
+        const review = document.createElement("div");
+        review.className = "review-controls";
+        const decision = document.createElement("fieldset");
+        decision.className = "decision-radio-group";
+        decision.setAttribute("aria-label", `Estado para candidato ${offset + index + 1}`);
+        const defaultDecision = pair.decision || (Number(pair.score) >= currentAutoSameThreshold ? "same" : "pending");
+        const decisionRadios = new Map();
+        for (const [value, label] of [["same", "Mismo artículo"], ["different", "Artículos diferentes"], ["pending", "Pendiente"]]) {
+          const option = document.createElement("label");
+          const radio = document.createElement("input");
+          radio.type = "radio";
+          radio.name = `decision-${jobId}-${pair.review_index ?? offset + index}`;
+          radio.value = value;
+          radio.checked = value === defaultDecision;
+          option.append(radio, document.createTextNode(label));
+          decision.append(option);
+          decisionRadios.set(value, radio);
+        }
+        const selectedDecision = () => [...decisionRadios.values()].find(radio => radio.checked)?.value || "pending";
+        const keep = document.createElement("select");
+        keep.setAttribute("aria-label", `Clave que se conservará para candidato ${offset + index + 1}`);
+        keep.add(new Option("Conservar clave…", ""));
+        const keyLabel = item => pkFields.map(field => `${field}=${item[field] ?? ""}`).join(" · ");
+        keep.add(new Option(`Conservar clave A: ${keyLabel(pair.a)}`, "a"));
+        keep.add(new Option(`Conservar clave B: ${keyLabel(pair.b)}`, "b"));
+        keep.value = pair.keep || "";
+        keep.disabled = selectedDecision() !== "same";
+        const save = document.createElement("button");
+        save.type = "button";
+        save.className = "save-decision";
+        save.textContent = defaultDecision === "pending" ? "Dejar pendiente" : "Marcar como resuelto";
+        for (const radio of decisionRadios.values()) radio.addEventListener("change", () => {
+          keep.disabled = selectedDecision() !== "same";
+          if (keep.disabled) keep.value = "";
+          save.textContent = selectedDecision() === "pending" ? "Dejar pendiente" : "Marcar como resuelto";
+        });
+        const auditText = () => pair.saved_by ? `Registrado por ${pair.saved_by} · ${new Date(pair.saved_at).toLocaleString("es-EC")}` : "Sin decisión guardada";
+        const saved = text("span", "saved-label", pair.decision ? auditText() : "");
+        save.addEventListener("click", async () => {
+          save.disabled = true;
+          saved.textContent = "Guardando…";
+          try {
+            const response = await fetch(`/api/v1/items/compare/${jobId}/decisions`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ index: pair.review_index ?? offset + index, decision: selectedDecision(), keep: keep.value || null }),
+            });
+            const body = await response.json();
+            if (!response.ok) throw new Error(body.error || "No se pudo guardar la decisión.");
+            pair.decision = body.decision; pair.keep = body.keep; pair.canonical_pk = body.canonical_pk;
+            pair.price_difference = body.price_difference;
+            pair.saved_by = body.saved_by; pair.saved_at = body.saved_at;
+            const outcome = body.canonical_pk ? ` · clave elegida ${pkFields.map(field => `${field}=${body.canonical_pk[field]}`).join(" / ")}` : "";
+            saved.textContent = `${auditText()}${outcome}`;
+            const activeFilter = filterForm.elements.decision.value;
+            const noLongerMatches = activeFilter && activeFilter !== "all" && activeFilter !== body.decision;
+            if (noLongerMatches) {
+              filteredCandidateCount = Math.max(0, filteredCandidateCount - 1);
+              const newPage = Math.min(currentPage, Math.max(1, Math.ceil(filteredCandidateCount / (Number(resultsList.dataset.pageSize) || 200))));
+              reviewFeedback.textContent = `Estado guardado por ${body.saved_by}. Este par ya no corresponde al filtro actual.`;
+              reviewFeedback.hidden = false;
+              await loadPage(newPage);
+            } else await loadPage(currentPage);
+          } catch (error) {
+            saved.textContent = error.message;
+          } finally { save.disabled = false; }
+        });
+        review.append(decision, keep, save, saved);
+        wrapper.append(review);
+        if (pair.audit_history?.length) {
+          const history = document.createElement("details");
+          history.className = "audit-history";
+          history.append(text("summary", "", `Historial de cambios · ${pair.audit_history.length}`));
+          const list = document.createElement("ul");
+          for (const event of pair.audit_history) {
+            const outcome = event.decision === "same" ? "Mismo artículo" : event.decision === "pending" ? "Pendiente" : "Artículos diferentes";
+            const canonical = event.canonical_pk ? ` · clave elegida ${pkFields.map(field => `${field}=${event.canonical_pk[field]}`).join(" / ")}` : "";
+            list.append(text("li", "", `${event.modified_at} · ${event.modified_by} · ${outcome}${canonical}`));
+          }
+          history.append(list);
+          wrapper.append(history);
+        }
+        return wrapper;
+      }
+
+      function renderGroup(group) {
+        const card = document.createElement("article");
+        card.className = "match-card group-card";
+        const canReview = Boolean(group.can_review);
+        const heading = document.createElement("div");
+        heading.className = "match-heading";
+        heading.append(text("strong", "", `Grupo · ${group.members.length} artículos`));
+        heading.append(text("span", "", `ID ${group.id.slice(0, 10)} · puntaje máximo ${group.max_score}% · ${group.links.length} relaciones`));
+        card.append(heading);
+        card.append(text("p", "group-assignment", group.assigned_to
+          ? `Grupo completo asignado a ${group.assigned_to}${group.assigned_by ? ` · por ${group.assigned_by} · ${group.assigned_at || ""}` : ""}`
+          : "Las relaciones del grupo tienen asignación incompleta o repartida."));
+        if (!canReview) card.append(text("p", "group-readonly-note", group.assigned_to
+          ? `Solo ${group.assigned_to} puede mover y guardar decisiones en este grupo.`
+          : "Asigna todas las relaciones del grupo antes de revisarlo."));
+        const workspace = document.createElement("div"); workspace.className = "group-workspace";
+        const available = document.createElement("section"); available.className = "group-available";
+        available.append(text("h4", "", `Aún por revisar · ${(group.pending_keys || []).length}`));
+        const tray = document.createElement("div"); tray.className = "group-members";
+        const drop = document.createElement("section"); drop.className = "group-drop-zone"; drop.setAttribute("aria-label", "Artículos seleccionados como el mismo artículo");
+        drop.append(text("h4", "", `Subgrupos confirmados · ${(group.subgroups || []).length}`));
+        const savedSelections = document.createElement("div"); savedSelections.className = "group-saved-selections";
+        drop.append(savedSelections, text("h4", "group-skip-title", `Marcados para no empatar · ${(group.skipped_members || []).length}`));
+        const skippedSelections = document.createElement("div"); skippedSelections.className = "group-saved-selections";
+        const newSubgroupHeading = text("h4", "group-new-selection-title", `Crear subgrupo ${(group.subgroups || []).length + 1}`);
+        newSubgroupHeading.hidden = !(group.pending_keys || []).length;
+        drop.append(skippedSelections, newSubgroupHeading);
+        const selected = new Map();
+        const selectedList = document.createElement("div"); selectedList.className = "group-selected-list";
+        const stateLine = text("p", "group-drop-hint", "Arrastra al menos dos artículos o usa el botón Añadir.");
+        selectedList.hidden = stateLine.hidden = !(group.pending_keys || []).length;
+        drop.append(selectedList, stateLine);
+        const memberKey = member => JSON.stringify(pkFields.map(field => String(member.pk[field] ?? "")));
+        const renderAvailable = () => {
+          tray.replaceChildren();
+          for (const member of group.members) {
+            const key = memberKey(member);
+            const stillPending = (group.pending_keys || []).some(pk => pkFields.every(field => String(pk[field] ?? "") === String(member.pk[field] ?? "")));
+            if (!stillPending || selected.has(key)) continue;
+            const entry = document.createElement("div"); entry.className = "group-available-item"; entry.draggable = canReview;
+            entry.addEventListener("dragstart", event => { event.dataTransfer.setData("text/plain", key); event.dataTransfer.effectAllowed = "move"; });
+            entry.append(buildItemCard("ARTÍCULO DISPONIBLE", member.item));
+            const add = document.createElement("button"); add.type = "button"; add.className = "group-add-item"; add.textContent = "Añadir →"; add.disabled = !canReview; add.addEventListener("click", () => addMember(member));
+            entry.append(add);
+            const skip = document.createElement("button"); skip.type = "button"; skip.className = "group-skip-item"; skip.textContent = "No empatar";
+            skip.disabled = !canReview;
+            skip.title = "Excluir este artículo de este grupo. La acción queda auditada y se puede reactivar.";
+            skip.addEventListener("click", async () => {
+              skip.disabled = true;
+              try {
+                const response = await fetch(`/api/v1/items/compare/${currentJobId}/groups/decisions`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({group_id:group.id,decision:"skip",member_pks:[member.pk]}) });
+                const body = await response.json(); if (!response.ok) throw new Error(body.error || "No se pudo marcar el artículo.");
+                groupFeedback.textContent = `Artículo marcado como “No empatar” por ${body.saved_by}. Quedó registrado en la auditoría.`; groupFeedback.hidden = false; await loadGroups(1);
+              } catch(error) { groupFeedback.textContent = error.message; groupFeedback.hidden = false; skip.disabled = false; }
+            });
+            entry.append(skip); tray.append(entry);
+          }
+        };
+        const renderSelected = () => {
+          selectedList.replaceChildren();
+          for (const [key, member] of selected) {
+            const entry = document.createElement("div"); entry.className = "group-selected-item";
+            entry.append(buildItemCard("SELECCIONADO", member.item));
+            const remove = document.createElement("button"); remove.type = "button"; remove.className = "group-remove-item"; remove.textContent = "Quitar";
+            remove.addEventListener("click", () => { selected.delete(key); renderSelected(); });
+            entry.append(remove); selectedList.append(entry);
+          }
+          stateLine.textContent = selected.size >= 2 ? `${selected.size} artículos seleccionados.` : "Arrastra al menos dos artículos o usa el botón Añadir.";
+          renderAvailable();
+          if (typeof updateButton === "function") updateButton();
+        };
+        const addMember = member => { const key = memberKey(member); if (!selected.has(key)) selected.set(key, member); renderSelected(); };
+        renderAvailable();
+        if (canReview) {
+          drop.addEventListener("dragover", event => { event.preventDefault(); drop.classList.add("drag-over"); });
+          drop.addEventListener("dragleave", event => { if (!drop.contains(event.relatedTarget)) drop.classList.remove("drag-over"); });
+          drop.addEventListener("drop", event => { event.preventDefault(); drop.classList.remove("drag-over"); const key = event.dataTransfer.getData("text/plain"); const member = group.members.find(candidate => memberKey(candidate) === key); if (member) addMember(member); });
+        }
+        available.append(tray); workspace.append(available, drop); card.append(workspace);
+        const relations = document.createElement("details");
+        relations.className = "group-relations";
+        relations.append(text("summary", "", `Relaciones que forman el grupo · puntajes ${group.min_score}%–${group.max_score}%`));
+        const relationList = document.createElement("ul");
+        for (const link of group.links) {
+          const prior = link.decision ? ` · decisión previa: ${link.decision} (${link.saved_by || "usuario no disponible"})` : " · sin decisión por pares";
+          relationList.append(text("li", "", `${link.a_description || "Artículo A"} ↔ ${link.b_description || "Artículo B"} · ${link.score}%${prior}`));
+        }
+        relations.append(relationList);
+        card.append(relations);
+
+        const controls = document.createElement("div");
+        controls.className = "group-controls";
+        controls.hidden = !canReview || !(group.pending_keys || []).length;
+        const save = document.createElement("button");
+        save.type = "button";
+        save.className = "save-decision";
+        const updateButton = () => {
+          save.disabled = selected.size < 2;
+          save.textContent = `Confirmar subgrupo ${(group.subgroups || []).length + 1} como mismo artículo`;
+        };
+        updateButton();
+        const feedback = text("span", "saved-label", "Selecciona dos o más artículos para guardar.");
+        save.addEventListener("click", async () => {
+          save.disabled = true;
+          feedback.textContent = "Guardando grupo…";
+          try {
+            const response = await fetch(`/api/v1/items/compare/${currentJobId}/groups/decisions`, {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ group_id: group.id, decision: "unify", member_pks: [...selected.values()].map(item => item.pk) }),
+            });
+            const body = await response.json();
+            if (!response.ok) throw new Error(body.error || "No se pudo guardar el grupo.");
+            groupFeedback.textContent = `Selección guardada como mismo artículo por ${body.saved_by}.`;
+            groupFeedback.hidden = false;
+            await loadGroups(1);
+          } catch (error) {
+            feedback.textContent = error.message;
+          } finally { save.disabled = false; }
+        });
+        controls.append(save, feedback); card.append(controls);
+        const orderedSubgroups = [...(group.subgroups || [])].sort((a, b) => String(a.saved_at).localeCompare(String(b.saved_at)) || a.id.localeCompare(b.id));
+        orderedSubgroups.forEach((subgroup, subgroupIndex) => {
+          const saved = document.createElement("section"); saved.className = "group-saved-subgroup";
+          const pks = JSON.parse(subgroup.members_json);
+          saved.append(text("strong", "", `Subgrupo ${subgroupIndex + 1} · Mismo artículo · ${pks.length} artículos · ${subgroup.saved_by} · ${subgroup.saved_at}`));
+          const savedItems = document.createElement("div"); savedItems.className = "group-saved-items";
+          const selectedToReopen = new Map();
+          for (const pk of pks) {
+            const member = group.members.find(candidate => pkFields.every(field => String(candidate.pk[field] ?? "") === String(pk[field] ?? "")));
+            if (member) {
+              const itemRow = document.createElement("div"); itemRow.className = "group-reopen-item";
+              const check = document.createElement("input"); check.type = "checkbox"; check.className = "group-reopen-check";
+              check.disabled = !canReview;
+              check.setAttribute("aria-label", `Devolver ${member.item.DESCRIPCION || "artículo"} a pendientes`);
+              const key = memberKey(member);
+              check.addEventListener("change", () => { if (check.checked) selectedToReopen.set(key, member.pk); else selectedToReopen.delete(key); reopenSelected.disabled = selectedToReopen.size === 0; });
+              itemRow.append(check, buildItemCard("CONFIRMADO", member.item)); savedItems.append(itemRow);
+            }
+          }
+          saved.append(savedItems);
+          const actions = document.createElement("div"); actions.className = "group-subgroup-actions";
+          const reopenSelected = document.createElement("button"); reopenSelected.type = "button"; reopenSelected.className = "group-reopen"; reopenSelected.textContent = "Devolver seleccionados a Pendientes"; reopenSelected.disabled = true;
+          reopenSelected.addEventListener("click", async () => {
+            reopenSelected.disabled = true;
+            try {
+              const response = await fetch(`/api/v1/items/compare/${currentJobId}/groups/decisions`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({group_id:group.id,decision:"pending",member_pks:[...selectedToReopen.values()]}) });
+              const body = await response.json(); if (!response.ok) throw new Error(body.error || "No se pudo devolver la selección.");
+              groupFilters.elements.decision.value = "pending";
+              groupFeedback.textContent = body.reopened_all ? "Al quedar un solo artículo, se reabrió todo el subgrupo para mantener al menos dos artículos confirmados." : `${body.reopened_member_count} artículo(s) devuelto(s) a Pendientes. La acción quedó auditada.`;
+              groupFeedback.hidden = false; await loadGroups(1);
+            } catch(error) { groupFeedback.textContent = error.message; groupFeedback.hidden = false; reopenSelected.disabled = selectedToReopen.size === 0; }
+          });
+          const reopenAll = document.createElement("button"); reopenAll.type = "button"; reopenAll.className = "group-reopen"; reopenAll.textContent = "Reabrir todo el subgrupo";
+          reopenAll.disabled = !canReview;
+          reopenAll.addEventListener("click", async () => {
+            reopenAll.disabled = true;
+            try {
+              const response = await fetch(`/api/v1/items/compare/${currentJobId}/groups/decisions`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({group_id:group.id,decision:"pending",member_pks:pks}) });
+              const body = await response.json(); if (!response.ok) throw new Error(body.error || "No se pudo reabrir el subgrupo.");
+              groupFilters.elements.decision.value = "pending"; groupFeedback.textContent = `${body.reopened_member_count} artículos devueltos a Pendientes; acción auditada.`; groupFeedback.hidden = false; await loadGroups(1);
+            } catch(error) { groupFeedback.textContent = error.message; groupFeedback.hidden = false; reopenAll.disabled = false; }
+          });
+          actions.append(reopenSelected, reopenAll); saved.append(actions); savedSelections.append(saved);
+        });
+        for (const skipped of group.skipped_members || []) {
+          const entry = document.createElement("section"); entry.className = "group-saved-subgroup group-skipped-item";
+          const member = group.members.find(candidate => pkFields.every(field => String(candidate.pk[field] ?? "") === String(skipped.pk[field] ?? "")));
+          entry.append(text("strong", "", `No empatar · ${skipped.saved_by} · ${skipped.saved_at}`));
+          if (member) { const item = document.createElement("div"); item.className = "group-saved-items"; item.append(buildItemCard("OMITIDO EN ESTE GRUPO", member.item)); entry.append(item); }
+          const restore = document.createElement("button"); restore.type = "button"; restore.className = "group-reopen"; restore.textContent = "Reactivar";
+          restore.disabled = !canReview;
+          restore.addEventListener("click", async () => {
+            restore.disabled = true;
+            try { const response = await fetch(`/api/v1/items/compare/${currentJobId}/groups/decisions`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({group_id:group.id,decision:"pending",member_pks:[skipped.pk]}) }); const body = await response.json(); if (!response.ok) throw new Error(body.error || "No se pudo reactivar el artículo."); await loadGroups(1); }
+            catch(error) { groupFeedback.textContent = error.message; groupFeedback.hidden = false; restore.disabled = false; }
+          }); entry.append(restore); skippedSelections.append(entry);
+        }
+        if (group.audit_history?.length) {
+          const audit = document.createElement("details");
+          audit.className = "audit-history";
+          audit.append(text("summary", "", `Historial del grupo · ${group.audit_history.length}`));
+          const list = document.createElement("ul");
+          for (const event of group.audit_history) {
+            const decision = event.decision === "unify" ? "Confirmar mismo artículo" : event.decision === "skip" ? "No empatar" : event.decision === "manual" ? "Decisión anterior: revisión por pares" : "Reactivar selección";
+            const keys = (event.member_pks || []).map(pk => pkFields.map(field => `${field}=${pk[field] ?? ""}`).join(" / ")).join("; ");
+            list.append(text("li", "", `${event.modified_at} · ${event.modified_by} · ${decision}${keys ? ` · Claves: ${keys}` : ""}`));
+          }
+          audit.append(list);
+          card.append(audit);
+        }
+        return card;
+      }
+
+      async function loadGroups(page = 1) {
+        if (!currentJobId) return;
+        groupsList.replaceChildren(text("p", "empty-results", "Construyendo grupos de similitud…"));
+        groupsPrevious.disabled = true;
+        groupsNext.disabled = true;
+        try {
+          const decision = groupFilters.elements.decision.value;
+          const response = await fetch(`/api/v1/items/compare/${currentJobId}/groups?page=${page}&decision=${encodeURIComponent(decision)}`);
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error || "No se pudieron cargar los grupos.");
+          currentGroupPage = body.page;
+          totalGroupPages = body.page_count;
+          groupSummary.textContent = `${number(body.group_total)} grupos visibles · ${number(body.subgroup_total)} subgrupos confirmados como mismo artículo · ${number(body.group_skip)} con artículos marcados “No empatar” · ${number(body.group_pending)} con artículos por revisar${body.hidden_assignment_groups ? ` · ${number(body.hidden_assignment_groups)} ocultos porque sus relaciones no están asignadas a un mismo experto` : ""}`;
+          resultsCount.textContent = `${number(body.group_total)} grupos`;
+          groupsList.replaceChildren();
+          if (!body.groups.length) groupsList.append(text("p", "empty-results", "No hay grupos para este filtro. Prueba con otro estado o revisa el umbral de similitud de la corrida."));
+          for (const group of body.groups) groupsList.append(renderGroup(group));
+          groupsPageLabel.textContent = `Página ${body.page} de ${body.page_count}`;
+          groupsPrevious.disabled = body.page <= 1;
+          groupsNext.disabled = body.page >= body.page_count;
+          groupsPagination.hidden = body.page_count <= 1;
+          groupsPageNumbers.replaceChildren();
+          for (let numberPage = 1; numberPage <= body.page_count; numberPage++) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "page-number";
+            button.textContent = String(numberPage);
+            if (numberPage === body.page) button.setAttribute("aria-current", "page");
+            button.addEventListener("click", () => loadGroups(numberPage));
+            groupsPageNumbers.append(button);
+          }
+        } catch (error) {
+          groupsList.replaceChildren(text("p", "error-message", error.message));
+        }
+      }
+
+      function showResults(job) {
+        resultsList.replaceChildren();
+        currentJobId = job.id;
+        assignmentTemplate.href = `/api/v1/items/compare/${job.id}/assignments/template`;
+        currentPage = job.page || 1;
+        totalPages = job.page_count || 1;
+        filteredCandidateCount = job.filtered_count ?? job.candidate_count ?? 0;
+        resultsList.dataset.pageSize = job.page_size || 200;
+        resultsTitle.textContent = `Tipo ${job.tipo}: grupos por revisar`;
+        const total = filteredCandidateCount;
+        const offset = (currentPage - 1) * (job.page_size || 200);
+        resultsCount.textContent = `${number(total)} candidatos · ${number(job.shown_count || 0)} en esta página`;
+        if (!job.results || job.results.length === 0) {
+          resultsList.append(text("p", "empty-results", "No se encontraron candidatos con ese umbral. Prueba con una similitud mínima menor."));
+        } else {
+          job.results.forEach((pair, index) => resultsList.append(renderPair(pair, index, job.id, offset)));
+        }
+        if (job.results_truncated) resultsList.append(text("p", "review-note", "Se alcanzó el límite de 10.000 candidatos retenidos; eleva el umbral para acotar la lista."));
+        pageLabel.textContent = `Página ${currentPage} de ${totalPages}`;
+        previousPage.disabled = currentPage <= 1;
+        nextPage.disabled = currentPage >= totalPages;
+        pagination.hidden = totalPages <= 1;
+        pageNumbers.replaceChildren();
+        for (let page = 1; page <= totalPages; page++) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "page-number";
+          button.textContent = String(page);
+          if (page === currentPage) button.setAttribute("aria-current", "page");
+          button.addEventListener("click", () => loadPage(page));
+          pageNumbers.append(button);
+        }
+        assignmentTools.hidden = !canDeleteRuns;
+        pairView.hidden = true;
+        groupView.hidden = false;
+        loadGroups(1);
+        resultsSection.hidden = false;
+      }
+
+      async function loadPage(page) {
+        previousPage.disabled = true; nextPage.disabled = true;
+        try {
+          const query = currentFilters();
+          const response = await fetch(`/api/v1/items/compare/${currentJobId}?page=${page}${query ? `&${query}` : ""}`);
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error || "No se pudo cargar esta página.");
+          showResults(body);
+          resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        } catch (error) {
+          errorMessage.textContent = error.message;
+          errorMessage.hidden = false;
+          previousPage.disabled = currentPage <= 1; nextPage.disabled = currentPage >= totalPages;
+        }
+      }
+      previousPage.addEventListener("click", () => { if (currentPage > 1) loadPage(currentPage - 1); });
+      nextPage.addEventListener("click", () => { if (currentPage < totalPages) loadPage(currentPage + 1); });
+      groupFilters.addEventListener("submit", event => { event.preventDefault(); loadGroups(1); });
+      groupsPrevious.addEventListener("click", () => { if (currentGroupPage > 1) loadGroups(currentGroupPage - 1); });
+      groupsNext.addEventListener("click", () => { if (currentGroupPage < totalGroupPages) loadGroups(currentGroupPage + 1); });
+      assignmentImportForm.addEventListener("submit", async event => {
+        event.preventDefault();
+        if (!currentJobId || !assignmentFile.files.length) return;
+        const button = assignmentImportForm.querySelector("button[type=submit]");
+        button.disabled = true;
+        assignmentImportMessage.hidden = true;
+        try {
+          const response = await fetch(`/api/v1/items/compare/${currentJobId}/assignments/import`, {
+            method: "POST",
+            headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+            body: assignmentFile.files[0],
+          });
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error || "No se pudo importar la asignación.");
+          assignmentImportMessage.textContent = body.assigned_pairs_count != null
+            ? `${body.assigned_count} grupos asignados (${body.assigned_pairs_count} relaciones); ${body.unchanged_count} grupos vacíos sin cambios.`
+            : `${body.assigned_count} filas asignadas; ${body.unchanged_count} filas vacías sin cambios.`;
+          assignmentImportMessage.hidden = false;
+          assignmentImportForm.reset();
+          await loadPage(1);
+        } catch (error) {
+          assignmentImportMessage.textContent = error.message;
+          assignmentImportMessage.hidden = false;
+        } finally { button.disabled = false; }
+      });
+      filterForm.addEventListener("submit", event => { event.preventDefault(); loadPage(1); });
+      document.querySelector("#clear-filters").addEventListener("click", () => { filterForm.reset(); loadPage(1); });
+      document.querySelector("#refresh-runs").addEventListener("click", loadSavedRuns);
+      document.querySelector("#change-run").addEventListener("click", () => {
+        document.querySelector("#runner-panel").hidden = false;
+        document.querySelector("#change-run").hidden = true;
+        statusCard.hidden = true;
+        resultsSection.hidden = true;
+      });
+
+      async function poll(job) {
+        try {
+          const response = await fetch(`/api/v1/items/compare/${encodeURIComponent(job.id)}`);
+          const state = await response.json();
+          if (!response.ok) throw new Error(state.error || "No se pudo consultar el progreso.");
+          progress.value = state.expected_rows ? Math.min(99, state.rows_processed * 100 / state.expected_rows) : 0;
+          if (state.state === "comparing") {
+            statusTitle.textContent = "Comparando descripciones…";
+            statusMessage.textContent = `${number(state.rows_processed)} registros extraídos; calculando candidatos.`;
+          } else {
+            statusTitle.textContent = "Extrayendo desde Oracle con Zig…";
+            statusMessage.textContent = `${number(state.rows_processed)} de ${number(state.expected_rows)} registros · lote ${number(state.current_batch)}`;
+          }
+          if (state.state === "completed") {
+            progress.value = 100;
+            statusTitle.textContent = "Comparación lista";
+            statusMessage.textContent = `${number(state.rows_processed)} registros revisados con el umbral ${state.threshold}%.`;
+            const reviewLink = document.createElement("a");
+            reviewLink.href = `/items/review?run=${encodeURIComponent(state.id)}`;
+            reviewLink.target = "_blank";
+            reviewLink.rel = "noopener";
+            reviewLink.textContent = "Abrir pares en la ventana de expertos ↗";
+            statusMessage.append(" ", reviewLink);
+            compareButton.disabled = false;
+            resultsSection.hidden = true;
+            loadSavedRuns();
+            return;
+          }
+          if (state.state === "failed") throw new Error(state.error || "Falló la comparación.");
+          setTimeout(() => poll(job), 1200);
+        } catch (error) {
+          errorMessage.textContent = error.message;
+          errorMessage.hidden = false;
+          compareButton.disabled = false;
+        }
+      }
+
+      async function loadSavedRuns() {
+        const list = document.querySelector("#saved-runs-list");
+        list.replaceChildren(text("p", "", "Cargando corridas guardadas…"));
+        try {
+          const response = await fetch("/api/v1/items/compare/runs");
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error || "No se pudo cargar el historial.");
+          list.replaceChildren();
+          if (!body.runs.length) {
+            list.append(text("p", "", "Aún no hay corridas guardadas."));
+            return;
+          }
+          for (const run of body.runs) {
+            const row = document.createElement("div");
+            row.className = "saved-run-row";
+            const link = document.createElement("a");
+            link.className = "saved-run-link";
+            link.href = `/items/review?run=${encodeURIComponent(run.id)}`;
+            link.target = "_blank";
+            link.rel = "noopener";
+            link.append(text("strong", "", `Tipo ${run.tipo} · ${number(run.retained_count || 0)} pares`));
+            link.append(text("span", "", `${run.created_by} · ${new Date(run.created_at).toLocaleString("es-EC")} · ${run.state}`));
+            row.append(link);
+            if (canDeleteRuns && run.state === "completed") {
+              const remove = document.createElement("button");
+              remove.type = "button";
+              remove.className = "delete-run-button";
+              remove.textContent = "Borrar corrida";
+              remove.addEventListener("click", async () => {
+                if (!window.confirm(`¿Retirar la corrida de tipo ${run.tipo} creada por ${run.created_by}? Se ocultará del historial; las decisiones y la auditoría se conservarán.`)) return;
+                remove.disabled = true;
+                try {
+                  const response = await fetch(`/api/v1/items/compare/runs/${run.id}`, { method: "DELETE" });
+                  const result = await response.json();
+                  if (!response.ok) throw new Error(result.error || "No se pudo borrar la corrida.");
+                  row.remove();
+                } catch (error) {
+                  window.alert(error.message);
+                  remove.disabled = false;
+                }
+              });
+              row.append(remove);
+            }
+            list.append(row);
+          }
+        } catch (error) {
+          list.replaceChildren(text("p", "", error.message));
+        }
+      }
+
+      async function loadSessionRole() {
+        try {
+          const response = await fetch("/api/v1/session");
+          const session = await response.json();
+          if (!response.ok) throw new Error("No se pudo consultar el perfil de la sesión.");
+          canDeleteRuns = Boolean(session.can_delete_comparisons);
+          if (!reviewMode && !session.can_run_comparisons) {
+            form.hidden = true;
+            document.querySelector("#reviewer-notice").hidden = false;
+            return false;
+          }
+          return Boolean(session.can_run_comparisons);
+        } catch (_) {
+          if (!reviewMode) {
+            form.hidden = true;
+            document.querySelector("#reviewer-notice").hidden = false;
+          }
+          return false;
+        }
+      }
+
+      async function openSavedRun(runId) {
+        try {
+          const query = new URLSearchParams({ page: "1", decision: filterForm.elements.decision.value });
+          const response = await fetch(`/api/v1/items/compare/${encodeURIComponent(runId)}?${query}`);
+          const run = await response.json();
+          if (!response.ok) throw new Error(run.error || "No se pudo abrir la corrida.");
+          if (run.state !== "completed") throw new Error(`La corrida aún no está lista (${run.state}).`);
+          currentJobId = run.id;
+          currentAutoSameThreshold = Number(run.auto_same_threshold ?? 94);
+          assignmentTemplate.href = `/api/v1/items/compare/${run.id}/assignments/template`;
+          document.querySelector("#runner-panel").hidden = true;
+          document.querySelector("#review-banner-text").textContent = `REVISIÓN · TIPO ${run.tipo} · creada por ${run.created_by} · sugerir mismo desde ${run.auto_same_threshold ?? 94}% · ${new Date(run.created_at).toLocaleString("es-EC")}`;
+          document.querySelector("#change-run").hidden = false;
+          statusCard.hidden = false;
+          statusTitle.textContent = `Corrida guardada · ${run.created_by}`;
+          statusMessage.textContent = `${new Date(run.created_at).toLocaleString("es-EC")} · ${number(run.rows_processed)} registros procesados.`;
+          progress.value = 100;
+          showResults(run);
+          resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+        } catch (error) {
+          errorMessage.textContent = error.message;
+          errorMessage.hidden = false;
+        }
+      }
+
+      form.addEventListener("submit", async event => {
+        event.preventDefault();
+        compareButton.disabled = true;
+        errorMessage.hidden = true;
+        resultsSection.hidden = true;
+        currentAutoSameThreshold = Number(autoSameThreshold.value);
+        statusCard.hidden = false;
+        progress.value = 0;
+        statusTitle.textContent = "Iniciando comparación…";
+        statusMessage.textContent = "Se extraerán los registros del tipo seleccionado.";
+        try {
+          const response = await fetch("/api/v1/items/compare", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tipo: typeSelect.value, threshold: Number(threshold.value), auto_same_threshold: currentAutoSameThreshold }),
+          });
+          const job = await response.json();
+          if (!response.ok) throw new Error(job.error || "No se pudo iniciar la comparación.");
+          poll(job);
+        } catch (error) {
+          errorMessage.textContent = error.message;
+          errorMessage.hidden = false;
+          compareButton.disabled = false;
+        }
+      });
+
+      let roleReady;
+      if (reviewMode) {
+        document.body.classList.add("review-mode");
+        form.hidden = true;
+        document.querySelector("#reviewer-notice").hidden = true;
+        document.querySelector("#review-only-banner").hidden = false;
+        document.querySelector("#runner-panel").querySelector("h1").textContent = "Corridas para revisar";
+        document.querySelector("#runner-panel").querySelector(".intro").textContent = "Abre una corrida guardada para revisar y decidir sobre sus pares.";
+        roleReady = loadSessionRole().then(() => loadSavedRuns());
+      } else {
+        roleReady = loadSessionRole().then(canRun => { if (canRun) loadTypes(); loadSavedRuns(); });
+      }
+      const savedRunId = new URLSearchParams(location.search).get("run");
+      if (savedRunId && /^[0-9a-f]{32}$/.test(savedRunId)) {
+        if (reviewMode) roleReady.then(() => openSavedRun(savedRunId));
+        else location.replace(`/items/review?run=${encodeURIComponent(savedRunId)}`);
+      }
+    </script>
+  </body>
+</html>

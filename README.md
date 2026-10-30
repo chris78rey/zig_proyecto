@@ -14,6 +14,15 @@ demostración y la API general con exportación multiparte sigue pendiente.
 Consulta [`docs/architecture/integration.md`](docs/architecture/integration.md)
 para el estado y los límites actuales.
 
+La aplicación web local está enfocada temporalmente en comparar descripciones
+de `SIS.ITEMS` por tipo y revisar candidatos en grupos. La persona asignada puede
+confirmar subgrupos de artículos iguales o marcar artículos como «No empatar».
+Las decisiones y asignaciones quedan auditadas en
+`output/items-review/review.sqlite3`; Oracle no se modifica. La aplicación
+solicita iniciar sesión con una cuenta Oracle, valida sus datos contra Oracle y
+mantiene la contraseña solo en memoria durante la sesión. Las pantallas y rutas
+de exportación web están deshabilitadas mientras este sea el alcance de uso.
+
 ## Flujo previsto
 
 Interfaz web local → API local en Zig → orquestador de exportación → fuente Oracle (OCI/ODPI-C) → lotes de filas → escritor Parquet.

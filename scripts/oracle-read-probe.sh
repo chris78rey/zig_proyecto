@@ -9,10 +9,16 @@ if [[ ! -f .env ]]; then
   exit 1
 fi
 
+provided_oracle_user="${ORACLE_USER-}"
+provided_oracle_password="${ORACLE_PASSWORD-}"
+had_oracle_user="${ORACLE_USER+x}"
+had_oracle_password="${ORACLE_PASSWORD+x}"
 set -a
 # shellcheck disable=SC1091
 . ./.env
 set +a
+if [[ -n "$had_oracle_user" ]]; then export ORACLE_USER="$provided_oracle_user"; fi
+if [[ -n "$had_oracle_password" ]]; then export ORACLE_PASSWORD="$provided_oracle_password"; fi
 
 export PYARROW_DIR="${PYARROW_DIR:-$(python3 -c 'import pathlib, pyarrow; print(pathlib.Path(pyarrow.__file__).parent)')}"
 export PYARROW_ARROW_LIB="${PYARROW_ARROW_LIB:-$(python3 -c 'import glob, os, pyarrow; print(glob.glob(os.path.dirname(pyarrow.__file__)+"/libarrow.so.*")[0])')}"

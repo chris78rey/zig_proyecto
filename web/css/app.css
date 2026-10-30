@@ -46,6 +46,10 @@ select:disabled{background:#f7f9f8;color:#a2aeae}.field-hint{margin:6px 0 0;colo
 .job-footer{display:flex;align-items:center;gap:18px;margin-top:18px;padding-top:14px;border-top:1px solid #edf1ef;color:#96a29f;font-size:10px}.job-footer strong{margin-left:4px;color:#4d6969;font-weight:700}.cancel-button{margin-left:auto;padding:7px 10px;border:1px solid #f0d8d4;border-radius:8px;background:#fff8f7;color:#a94d42;font-size:10px;font-weight:700;cursor:pointer}.cancel-button:hover{background:#fff0ee}
 .job-error{margin-top:13px}.progress-footnote{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:18px;color:#99a6a2;font-size:9px}.progress-footnote .pulse-dot{width:6px;height:6px;background:#70b99a;box-shadow:0 0 0 3px #eaf5ef}
 .page-footer{display:flex;justify-content:space-between;padding:21px 3px 0;color:#9ba8a4;font-size:9px;letter-spacing:.12px}
+.quick-links{display:flex;justify-content:flex-end;align-items:center;gap:18px;flex-wrap:wrap;margin:12px 0 0;font-size:12px;font-weight:650}
+.quick-links a{color:#087f69;text-decoration:none}.quick-links a:hover{text-decoration:underline}
+.quick-links .excel-download{padding:8px 12px;border:1px solid #cce7dc;border-radius:8px;background:#eff8f3}
+.logout-button{min-height:34px;padding:0 12px;border:1px solid #dce7e1;border-radius:8px;background:#fff;color:#53716c;font-size:11px;font-weight:700;cursor:pointer}.logout-button:hover{background:#edf4f0}.logout-button:disabled{opacity:.55;cursor:wait}
 [hidden]{display:none!important}
 @media(max-width:850px){.workspace{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:14px}.panel{padding:20px}.shell{padding:0 22px 24px}}
 @media(max-width:690px){.workspace{grid-template-columns:1fr}.intro{align-items:flex-start;flex-direction:column;padding-top:30px}.connection-state{min-width:0}.progress-panel{min-height:490px}.panel{padding:21px}.shell{padding:0 15px 20px}.topbar{height:66px}.brand{font-size:14px}.mode-pill{font-size:10px}.page-footer{gap:12px;font-size:8px}h1{font-size:26px}}

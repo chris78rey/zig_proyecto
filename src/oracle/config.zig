@@ -5,6 +5,12 @@ pub const Endpoint = union(enum) {
     service_name: []const u8,
 };
 
+/// Filtro de igualdad textual opcional para sondeos de una tabla.
+pub const Filter = struct {
+    column: []const u8,
+    value: []const u8,
+};
+
 /// El usuario y la contraseña los aporta la capa de configuración. Este tipo
 /// no los imprime ni conserva una copia después de crear la conexión.
 pub const Config = struct {
@@ -17,6 +23,7 @@ pub const Config = struct {
     /// Límite opcional para sondeos seguros; null permite leer la tabla completa.
     max_rows: ?u32 = null,
     oracle_client_lib_dir: ?[]const u8 = null,
+    filter: ?Filter = null,
 
     pub fn validate(self: Config) error{InvalidArgument}!void {
         if (self.username.len == 0 or self.password.len == 0 or self.port == 0) {
@@ -29,6 +36,10 @@ pub const Config = struct {
         }
         if (self.max_rows) |limit| {
             if (limit == 0 or limit > 50_000) return error.InvalidArgument;
+        }
+        if (self.filter) |filter| {
+            if (filter.column.len == 0 or filter.column.len > 30 or filter.value.len == 0) return error.InvalidArgument;
+            if (std.mem.indexOfScalar(u8, filter.value, 0) != null) return error.InvalidArgument;
         }
         if (!validHost(self.host)) return error.InvalidArgument;
         switch (self.endpoint) {

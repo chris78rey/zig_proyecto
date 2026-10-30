@@ -14,7 +14,67 @@ el temporal se elimina después de la descarga o al cumplir 15 minutos.
 También ofrece exportar todas las filas a un único Parquet persistente en
 `output/exports`. Consulta estadísticas de Oracle y el espacio local libre
 antes de iniciar, y muestra el avance por lotes. El dashboard principal sigue
-en modo de demostración.
+en modo de demostración. La portada incluye una descarga local del archivo
+preparado `SIS.ITEMS` con `TIPO='I'` (9.864 registros y 50 campos), servido por
+una ruta fija accesible solo desde loopback. El enlace «Consultar SIS.ITEMS por
+tipo» abre una página aparte que carga los tipos y sus cantidades desde Oracle;
+la exportación del tipo seleccionado pasa por Zig/ODPI-C y produce un Excel con
+todos sus campos.
+
+La página `/items/compare` ejecuta el flujo Zig para un solo `TIPO`, normaliza
+mayúsculas, acentos y puntuación, recupera hasta ocho candidatos por descripción
+con RapidFuzz y puntúa cada par combinando similitud de caracteres (65 %) y de
+palabras ordenadas (35 %). El umbral inicial es 85/100; retiene hasta 10.000
+candidatos y agrupa los artículos conectados por similitud. Cada tarjeta muestra
+la clave primaria `TIPO`, `SBS_SCC_CODIGO`, `SBS_CODIGO`, `CODIGO`. La vista de
+revisión permite crear varios subgrupos dentro de un grupo o marcar artículos
+como «No empatar». Las decisiones y su auditoría quedan en
+`output/items-review/review.sqlite3`; Oracle no se modifica.
+
+El servidor muestra `/login` para las páginas y APIs protegidas. El formulario
+valida usuario y contraseña con Oracle. La cookie de sesión es `HttpOnly`, la
+sesión y credenciales viven solo en memoria del servidor, y SQLite conserva las
+decisiones con usuario y fecha, nunca la contraseña.
+
+Cada corrida de comparación se guarda en SQLite con su creador, tipo, umbral,
+candidatos y estado. La lista «Corridas guardadas» permite que otros usuarios
+Oracle abran la corrida después de reiniciar el servidor. Los cambios se
+conservan como eventos de auditoría con responsable y fecha.
+`/items/compare` es la ventana de ejecución; por defecto, solo `christian_ruiz`
+puede iniciar corridas. El usuario se configura mediante
+`ITEMS_COMPARE_RUNNER_USER`. Al terminar, la corrida ofrece abrir `/items/review`
+en otra pestaña. Esa vista muestra los grupos guardados a lo ancho de la ventana.
+Christian puede ver todos los grupos y retirar corridas. El retiro las oculta del
+historial activo y guarda responsable y fecha; conserva candidatos y auditoría
+en SQLite.
+
+Christian descarga una plantilla Excel con una fila por grupo y asigna cada
+grupo mediante la primera columna `USUARIO_ORACLE`, que ofrece una lista de
+cuentas Oracle. Los demás campos y las hojas de consulta están protegidos para
+evitar cambios accidentales. Al cargar el archivo, el servidor valida la corrida
+y los grupos, guarda las asignaciones de grupo y sus relaciones en SQLite con
+usuario y fecha. Si la celda de asignación queda vacía, la asignación actual se
+conserva. Cada experto ve sus grupos asignados. Christian puede ver todos, pero
+solo el usuario asignado puede mover artículos, guardar subgrupos, omitirlos o
+reabrirlos; el servidor verifica esta regla al guardar. La paginación muestra
+botones numerados para saltar directamente a una página. Los precios de venta
+se destacan en cada artículo; los valores cero aparecen en rojo. La diferencia
+porcentual superior al 15 % se marca en rojo.
+
+Christian configura por corrida el porcentaje mínimo para sugerir «Mismo
+artículo» (predeterminado 94 %, rango desde la similitud mínima hasta 100 %).
+El control no permite usar una sugerencia por debajo del mínimo de similitud y
+el servidor valida la misma regla. El umbral queda guardado con la corrida. Los
+grupos y sus relaciones se ordenan por puntaje descendente; los artículos
+dentro del grupo se ordenan por su vínculo más fuerte.
+
+La página usa `GET /api/v1/items/types` para cargar los valores distintos de
+`TIPO` y su cantidad. `POST /api/v1/items/exports` acepta `{"tipo":"I"}`;
+devuelve un ID para consultar el progreso con `GET
+/api/v1/items/exports/{id}` y descargar el `.xlsx` terminado desde
+`GET /api/v1/items/exports/{id}/download`. El servidor limita a una exportación
+activa a la vez y guarda temporalmente el Parquet intermedio, que elimina al
+terminar la conversión.
 
 ## Pantallas y estados
 

@@ -24,10 +24,12 @@ El fetch array predeterminado es 10.000 filas, configurable entre 1 y 50.000. OD
 
 - `listSchemas`: propietarios presentes en `ALL_TABLES`.
 - `listTables`: tablas accesibles del propietario solicitado, leídas de `ALL_TABLES`.
-- `open`: consulta `SELECT * ... WHERE 1 = 0` sobre identificadores entrecomillados para obtener metadatos sin leer filas.
+- `open`: consulta `SELECT * ... WHERE 1 = 0` sobre identificadores entrecomillados para obtener metadatos sin leer filas. La exportación puede añadir un filtro opcional de igualdad textual; columna y valor se escapan antes de construir la consulta.
 - `next`: cursor de consulta de solo lectura. La configuración no acepta SQL del usuario.
 
 Los identificadores se citan duplicando comillas y se limitan a 30 bytes para servidores 11gR2. El filtro de propietario se escapa como literal SQL; no se concatena entrada sin escapar.
+
+El sondeo CLI acepta `ORACLE_FILTER_COLUMN` junto con `ORACLE_FILTER_VALUE` para filtrar una columna por igualdad. Deben configurarse ambos valores. Por ejemplo, `ORACLE_FILTER_COLUMN=TIPO` y `ORACLE_FILTER_VALUE=I` seleccionan artículos de tipo I; `ORACLE_MAX_ROWS=all` quita el límite de muestra. El filtro no acepta fragmentos SQL.
 
 ## Conversión inicial
 

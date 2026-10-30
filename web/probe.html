@@ -9,7 +9,7 @@
   </head>
   <body>
     <main class="card">
-      <a class="back" href="/">← Volver a Oracle a Parquet</a>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><a class="back" href="/">← Volver a Oracle a Parquet</a><button id="logout-button" type="button">Cerrar sesión</button></div>
       <p class="eyebrow">PRUEBA LOCAL · SOLO LECTURA</p>
       <h1>Conectar y exportar una muestra real</h1>
       <p class="intro">Elige un esquema visible para la conexión y una de sus tablas. La prueba lee hasta 1.000 filas, crea un Parquet temporal y comprueba que PyArrow pueda abrirlo. El archivo se borra al terminar.</p>
@@ -54,6 +54,18 @@
       <p id="error" class="error" role="alert" hidden></p>
     </main>
     <script type="module">
+      document.querySelector("#logout-button").addEventListener("click", async event => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+          const response = await fetch("/api/v1/logout", { method: "POST" });
+          if (!response.ok) throw new Error("No se pudo cerrar la sesión.");
+          location.replace("/login");
+        } catch (error) {
+          button.disabled = false;
+          document.querySelector("#status").textContent = error.message;
+        }
+      });
       const button = document.querySelector("#run");
       const status = document.querySelector("#status");
       const result = document.querySelector("#result");

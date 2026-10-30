@@ -16,9 +16,16 @@
           <span>Oracle <span class="muted">a</span> Parquet</span>
         </a>
         <div class="mode-pill"><span class="pulse-dot" aria-hidden="true"></span><span id="mode-label">Modo demostración</span></div>
+        <button id="logout-button" class="logout-button" type="button">Cerrar sesión</button>
       </header>
 
-      <p style="margin: 12px 0 0; text-align: right"><a href="/probe" style="color:#087f69;font-weight:650">Probar conexión Oracle real (máx. 1.000 filas) →</a></p>
+      <nav class="quick-links" aria-label="Acciones rápidas">
+        <a href="/items">Consultar SIS.ITEMS por tipo →</a>
+        <a href="/items/compare">Comparar descripciones →</a>
+        <a href="/items/review" target="_blank" rel="noopener">Ventana de revisión experta ↗</a>
+        <a class="excel-download" href="/api/v1/files/SIS_ITEMS_TIPO_I.xlsx">Descargar Excel · SIS.ITEMS tipo I · 9.864 registros</a>
+        <a href="/probe">Probar conexión Oracle real (máx. 1.000 filas) →</a>
+      </nav>
 
       <section class="intro" id="inicio">
         <div>
@@ -97,6 +104,20 @@
 
       <footer class="page-footer"><span>Oracle → lotes controlados → Parquet</span><span>Procesamiento local · Solo lectura</span></footer>
     </main>
+    <script>
+      document.querySelector("#logout-button").addEventListener("click", async event => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+          const response = await fetch("/api/v1/logout", { method: "POST" });
+          if (!response.ok) throw new Error("No se pudo cerrar la sesión.");
+          location.replace("/login");
+        } catch (error) {
+          button.disabled = false;
+          window.alert(error.message);
+        }
+      });
+    </script>
   </body>
 </html>
 http://127.0.0.1:8765
