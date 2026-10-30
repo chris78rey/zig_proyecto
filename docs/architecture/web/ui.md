@@ -50,9 +50,11 @@ en SQLite.
 
 Christian descarga una plantilla Excel con una fila por grupo y asigna cada
 grupo mediante la primera columna `USUARIO_ORACLE`, que ofrece una lista de
-cuentas Oracle. Los demás campos y las hojas de consulta están protegidos para
-evitar cambios accidentales. Al cargar el archivo, el servidor valida la corrida
-y los grupos, guarda las asignaciones de grupo y sus relaciones en SQLite con
+cuentas Oracle. La hoja incluye los cuatro campos de clave primaria del primer
+artículo como referencia visual para identificar cada grupo. Los demás campos y
+las hojas de consulta están protegidos para evitar cambios accidentales. Al
+cargar el archivo, el servidor valida la corrida y los grupos, guarda las
+asignaciones de grupo y sus relaciones en SQLite con
 usuario y fecha. Si la celda de asignación queda vacía, la asignación actual se
 conserva. Cada experto ve sus grupos asignados. Christian puede ver todos, pero
 solo el usuario asignado puede mover artículos, guardar subgrupos, omitirlos o
@@ -60,6 +62,20 @@ reabrirlos; el servidor verifica esta regla al guardar. La paginación muestra
 botones numerados para saltar directamente a una página. Los precios de venta
 se destacan en cada artículo; los valores cero aparecen en rojo. La diferencia
 porcentual superior al 15 % se marca en rojo.
+
+En cada subgrupo confirmado como mismo artículo, el experto asignado hace clic
+en la tarjeta que conservará la clave maestra. La selección queda en SQLite con
+usuario, fecha y evento de auditoría; solo se admite una clave que pertenezca
+al subgrupo. Para guardar un subgrupo nuevo, primero debe elegir una tarjeta
+maestra; sin esa selección, la confirmación permanece deshabilitada. Los
+subgrupos guardados se muestran colapsados con su cantidad de artículos y el
+maestro actual; al desplegarlos se pueden cambiar el maestro o reabrir artículos.
+Christian puede descargar el reporte Excel de empates. La hoja `Empates a
+realizar` relaciona cada clave origen que se absorberá con la clave maestra,
+presenta por separado los campos `TIPO`, `SBS_SCC_CODIGO`, `SBS_CODIGO` y
+`CODIGO` del origen y del maestro, con columnas ampliadas para leer los códigos;
+la hoja `Pendientes de maestro` enumera subgrupos confirmados que aún requieren
+esa elección. El archivo es un plan de trabajo y no ejecuta cambios en Oracle.
 
 Christian configura por corrida el porcentaje mínimo para sugerir «Mismo
 artículo» (predeterminado 94 %, rango desde la similitud mínima hasta 100 %).

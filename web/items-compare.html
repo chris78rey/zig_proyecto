@@ -77,7 +77,10 @@
         <section id="group-review-view" class="group-review-view">
           <section id="assignment-tools" class="assignment-tools" hidden>
             <div><strong>Asignar grupos con Excel</strong><p>La plantilla tiene una fila por grupo y un menú para elegir usuario Oracle. Los artículos y sus claves aparecen en una hoja separada de consulta.</p></div>
-            <a id="assignment-template" class="download-link" download>Descargar plantilla de asignación</a>
+            <div class="assignment-downloads">
+              <a id="assignment-template" class="download-link" download>Descargar plantilla de asignación</a>
+              <a id="merge-plan-template" class="download-link" download>Descargar reporte de empates</a>
+            </div>
             <form id="assignment-import-form" class="assignment-import-form">
               <label for="assignment-file">Cargar plantilla completada</label>
               <div class="assignment-controls"><input id="assignment-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required><button type="submit">Guardar asignaciones</button></div>
@@ -85,7 +88,7 @@
             <p id="assignment-import-message" class="assignment-import-message" role="status" hidden></p>
           </section>
           <div class="groups-heading">
-            <div><p class="eyebrow">REVISIÓN POR GRUPOS</p><h3>Artículos conectados por similitud alta</h3><p>Dentro de cada grupo puedes crear tantos subgrupos como necesites: confirma dos o más artículos juntos y los que queden pendientes pueden formar otro subgrupo. Si uno no se va a empatar dentro del grupo, pulsa “No empatar”. Las decisiones quedan auditadas y se pueden reabrir.</p></div>
+            <div><p class="eyebrow">REVISIÓN POR GRUPOS</p><h3>Artículos conectados por similitud alta</h3><p>Dentro de cada grupo puedes crear tantos subgrupos como necesites. Al confirmar uno, elige como maestro la tarjeta que conservará su clave; sin esa selección no se habilita el guardado. Los demás artículos aparecerán asociados al maestro en el reporte. Si uno no se va a empatar, pulsa “No empatar”. Las decisiones quedan auditadas y se pueden reabrir.</p></div>
           </div>
           <p id="group-summary" class="resolution-progress" role="status"></p>
           <form id="group-filters" class="group-filters">
@@ -133,6 +136,7 @@
       const assignmentFile = document.querySelector("#assignment-file");
       const assignmentImportMessage = document.querySelector("#assignment-import-message");
       const assignmentTemplate = document.querySelector("#assignment-template");
+      const mergePlanTemplate = document.querySelector("#merge-plan-template");
       const pairView = document.querySelector("#pair-review-view");
       const groupView = document.querySelector("#group-review-view");
       const groupFilters = document.querySelector("#group-filters");
@@ -391,8 +395,9 @@
         newSubgroupHeading.hidden = !(group.pending_keys || []).length;
         drop.append(skippedSelections, newSubgroupHeading);
         const selected = new Map();
+        let selectedMasterKey = null;
         const selectedList = document.createElement("div"); selectedList.className = "group-selected-list";
-        const stateLine = text("p", "group-drop-hint", "Arrastra al menos dos artículos o usa el botón Añadir.");
+        const stateLine = text("p", "group-drop-hint", "Añade dos o más artículos y selecciona la tarjeta que será el maestro.");
         selectedList.hidden = stateLine.hidden = !(group.pending_keys || []).length;
         drop.append(selectedList, stateLine);
         const memberKey = member => JSON.stringify(pkFields.map(field => String(member.pk[field] ?? "")));
@@ -424,13 +429,26 @@
         const renderSelected = () => {
           selectedList.replaceChildren();
           for (const [key, member] of selected) {
+            const isMaster = key === selectedMasterKey;
             const entry = document.createElement("div"); entry.className = "group-selected-item";
-            entry.append(buildItemCard("SELECCIONADO", member.item));
+            entry.tabIndex = canReview ? 0 : -1; entry.setAttribute("role", "radio"); entry.setAttribute("aria-checked", String(isMaster));
+            entry.classList.toggle("group-master-selected", isMaster);
+            const badge = text("span", "group-master-chip", isMaster ? "MAESTRO · conservar esta clave" : "Seleccionar como maestro");
+            entry.append(badge, buildItemCard("SELECCIONADO", member.item));
+            entry.addEventListener("click", event => {
+              if (!canReview || event.target.closest("button")) return;
+              selectedMasterKey = key; renderSelected();
+            });
+            entry.addEventListener("keydown", event => {
+              if (canReview && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); selectedMasterKey = key; renderSelected(); }
+            });
             const remove = document.createElement("button"); remove.type = "button"; remove.className = "group-remove-item"; remove.textContent = "Quitar";
-            remove.addEventListener("click", () => { selected.delete(key); renderSelected(); });
+            remove.addEventListener("click", event => { event.stopPropagation(); selected.delete(key); if (selectedMasterKey === key) selectedMasterKey = null; renderSelected(); });
             entry.append(remove); selectedList.append(entry);
           }
-          stateLine.textContent = selected.size >= 2 ? `${selected.size} artículos seleccionados.` : "Arrastra al menos dos artículos o usa el botón Añadir.";
+          stateLine.textContent = selected.size < 2
+            ? "Añade dos o más artículos y selecciona la tarjeta que será el maestro."
+            : selectedMasterKey ? `${selected.size} artículos seleccionados · maestro marcado.` : `${selected.size} artículos seleccionados · elige cuál será el maestro.`;
           renderAvailable();
           if (typeof updateButton === "function") updateButton();
         };
@@ -460,22 +478,22 @@
         save.type = "button";
         save.className = "save-decision";
         const updateButton = () => {
-          save.disabled = selected.size < 2;
-          save.textContent = `Confirmar subgrupo ${(group.subgroups || []).length + 1} como mismo artículo`;
+          save.disabled = selected.size < 2 || !selectedMasterKey;
+          save.textContent = `Confirmar subgrupo ${(group.subgroups || []).length + 1} y guardar maestro`;
         };
         updateButton();
-        const feedback = text("span", "saved-label", "Selecciona dos o más artículos para guardar.");
+        const feedback = text("span", "saved-label", "Selecciona dos o más artículos y marca uno como maestro.");
         save.addEventListener("click", async () => {
           save.disabled = true;
           feedback.textContent = "Guardando grupo…";
           try {
             const response = await fetch(`/api/v1/items/compare/${currentJobId}/groups/decisions`, {
               method: "POST", headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ group_id: group.id, decision: "unify", member_pks: [...selected.values()].map(item => item.pk) }),
+              body: JSON.stringify({ group_id: group.id, decision: "unify", member_pks: [...selected.values()].map(item => item.pk), canonical_pk: selected.get(selectedMasterKey)?.pk }),
             });
             const body = await response.json();
             if (!response.ok) throw new Error(body.error || "No se pudo guardar el grupo.");
-            groupFeedback.textContent = `Selección guardada como mismo artículo por ${body.saved_by}.`;
+            groupFeedback.textContent = `Subgrupo guardado con maestro ${pkFields.map(field => `${field}=${body.canonical_pk[field] ?? ""}`).join(" / ")} · por ${body.saved_by}.`;
             groupFeedback.hidden = false;
             await loadGroups(1);
           } catch (error) {
@@ -485,9 +503,15 @@
         controls.append(save, feedback); card.append(controls);
         const orderedSubgroups = [...(group.subgroups || [])].sort((a, b) => String(a.saved_at).localeCompare(String(b.saved_at)) || a.id.localeCompare(b.id));
         orderedSubgroups.forEach((subgroup, subgroupIndex) => {
-          const saved = document.createElement("section"); saved.className = "group-saved-subgroup";
+          const saved = document.createElement("details"); saved.className = "group-saved-subgroup";
           const pks = JSON.parse(subgroup.members_json);
-          saved.append(text("strong", "", `Subgrupo ${subgroupIndex + 1} · Mismo artículo · ${pks.length} artículos · ${subgroup.saved_by} · ${subgroup.saved_at}`));
+          const savedMaster = subgroup.canonical_pk
+            ? group.members.find(member => pkFields.every(field => String(member.pk[field] ?? "") === String(subgroup.canonical_pk[field] ?? "")))
+            : null;
+          const summary = text("summary", "group-saved-summary", `Subgrupo ${subgroupIndex + 1} · ${pks.length} artículos · Maestro: ${savedMaster?.item.DESCRIPCION || "pendiente de elegir"}`);
+          summary.title = `Guardado por ${subgroup.saved_by} · ${subgroup.saved_at}. Haz clic para editar.`;
+          saved.append(summary);
+          const savedBody = document.createElement("div"); savedBody.className = "group-saved-body";
           const savedItems = document.createElement("div"); savedItems.className = "group-saved-items";
           const selectedToReopen = new Map();
           for (const pk of pks) {
@@ -499,10 +523,46 @@
               check.setAttribute("aria-label", `Devolver ${member.item.DESCRIPCION || "artículo"} a pendientes`);
               const key = memberKey(member);
               check.addEventListener("change", () => { if (check.checked) selectedToReopen.set(key, member.pk); else selectedToReopen.delete(key); reopenSelected.disabled = selectedToReopen.size === 0; });
-              itemRow.append(check, buildItemCard("CONFIRMADO", member.item)); savedItems.append(itemRow);
+              const masterCard = buildItemCard("CONFIRMADO", member.item);
+              const isMaster = Boolean(subgroup.canonical_pk && pkFields.every(field => String(member.pk[field] ?? "") === String(subgroup.canonical_pk[field] ?? "")));
+              masterCard.classList.add("group-master-candidate");
+              masterCard.setAttribute("role", "radio");
+              masterCard.setAttribute("aria-checked", String(isMaster));
+              masterCard.tabIndex = canReview ? 0 : -1;
+              masterCard.setAttribute("aria-label", `${isMaster ? "Maestro actual" : "Seleccionar como maestro"}: ${member.item.DESCRIPCION || "artículo"} · ${pkFields.map(field => `${field}=${member.pk[field] ?? ""}`).join(" / ")}`);
+              masterCard.addEventListener("click", () => setGroupMaster(member));
+              masterCard.addEventListener("keydown", event => {
+                if (canReview && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setGroupMaster(member); }
+              });
+              itemRow.append(check, masterCard); savedItems.append(itemRow);
             }
           }
-          saved.append(savedItems);
+          savedBody.append(savedItems);
+          const masterStatus = text("p", "group-master-status", savedMaster
+            ? `Artículo maestro actual: ${savedMaster.item.DESCRIPCION || "Sin descripción"} · ${pkFields.map(field => `${field}=${savedMaster.pk[field] ?? ""}`).join(" / ")}`
+            : "Pendiente elegir maestro. Haz clic en la tarjeta que se conservará.");
+          savedBody.append(masterStatus);
+          let masterSaving = false;
+          const setGroupMaster = async master => {
+            if (!canReview || masterSaving || (savedMaster && memberKey(savedMaster) === memberKey(master))) return;
+            masterSaving = true;
+            masterStatus.textContent = "Guardando maestro…";
+            try {
+              const response = await fetch(`/api/v1/items/compare/${currentJobId}/groups/decisions`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ group_id: group.id, decision: "unify", member_pks: pks, canonical_pk: master.pk }),
+              });
+              const body = await response.json();
+              if (!response.ok) throw new Error(body.error || "No se pudo guardar el artículo maestro.");
+              groupFeedback.textContent = `Maestro actualizado por ${body.saved_by}; los otros artículos del subgrupo se asociarán a esta clave en el reporte.`;
+              groupFeedback.hidden = false;
+              await loadGroups(currentGroupPage);
+            } catch (error) {
+              masterStatus.textContent = error.message;
+            } finally {
+              masterSaving = false;
+            }
+          };
           const actions = document.createElement("div"); actions.className = "group-subgroup-actions";
           const reopenSelected = document.createElement("button"); reopenSelected.type = "button"; reopenSelected.className = "group-reopen"; reopenSelected.textContent = "Devolver seleccionados a Pendientes"; reopenSelected.disabled = true;
           reopenSelected.addEventListener("click", async () => {
@@ -525,7 +585,7 @@
               groupFilters.elements.decision.value = "pending"; groupFeedback.textContent = `${body.reopened_member_count} artículos devueltos a Pendientes; acción auditada.`; groupFeedback.hidden = false; await loadGroups(1);
             } catch(error) { groupFeedback.textContent = error.message; groupFeedback.hidden = false; reopenAll.disabled = false; }
           });
-          actions.append(reopenSelected, reopenAll); saved.append(actions); savedSelections.append(saved);
+          actions.append(reopenSelected, reopenAll); savedBody.append(actions); saved.append(savedBody); savedSelections.append(saved);
         });
         for (const skipped of group.skipped_members || []) {
           const entry = document.createElement("section"); entry.className = "group-saved-subgroup group-skipped-item";
@@ -548,7 +608,8 @@
           for (const event of group.audit_history) {
             const decision = event.decision === "unify" ? "Confirmar mismo artículo" : event.decision === "skip" ? "No empatar" : event.decision === "manual" ? "Decisión anterior: revisión por pares" : "Reactivar selección";
             const keys = (event.member_pks || []).map(pk => pkFields.map(field => `${field}=${pk[field] ?? ""}`).join(" / ")).join("; ");
-            list.append(text("li", "", `${event.modified_at} · ${event.modified_by} · ${decision}${keys ? ` · Claves: ${keys}` : ""}`));
+            const master = event.canonical_pk ? ` · Maestro: ${pkFields.map(field => `${field}=${event.canonical_pk[field] ?? ""}`).join(" / ")}` : "";
+            list.append(text("li", "", `${event.modified_at} · ${event.modified_by} · ${decision}${master}${keys ? ` · Claves: ${keys}` : ""}`));
           }
           audit.append(list);
           card.append(audit);
@@ -596,6 +657,7 @@
         resultsList.replaceChildren();
         currentJobId = job.id;
         assignmentTemplate.href = `/api/v1/items/compare/${job.id}/assignments/template`;
+        mergePlanTemplate.href = `/api/v1/items/compare/${job.id}/merge-plan`;
         currentPage = job.page || 1;
         totalPages = job.page_count || 1;
         filteredCandidateCount = job.filtered_count ?? job.candidate_count ?? 0;
@@ -804,6 +866,7 @@
           currentJobId = run.id;
           currentAutoSameThreshold = Number(run.auto_same_threshold ?? 94);
           assignmentTemplate.href = `/api/v1/items/compare/${run.id}/assignments/template`;
+          mergePlanTemplate.href = `/api/v1/items/compare/${run.id}/merge-plan`;
           document.querySelector("#runner-panel").hidden = true;
           document.querySelector("#review-banner-text").textContent = `REVISIÓN · TIPO ${run.tipo} · creada por ${run.created_by} · sugerir mismo desde ${run.auto_same_threshold ?? 94}% · ${new Date(run.created_at).toLocaleString("es-EC")}`;
           document.querySelector("#change-run").hidden = false;

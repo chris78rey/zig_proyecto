@@ -631,7 +631,7 @@ def attach_group_decisions(run_id, groups):
 
 def group_merge_plan_workbook(run_id):
     from openpyxl import Workbook
-    from openpyxl.cell import WriteOnlyCell
+    from openpyxl.styles import Alignment, Font, PatternFill
 
     run = load_comparison_run(run_id)
     if run is None or run.get("state") != "completed":
@@ -639,41 +639,114 @@ def group_merge_plan_workbook(run_id):
     refresh_pair_assignments(run_id, run["results"])
     groups = build_comparison_groups(run_id, run["results"], run.get("auto_same_threshold", 94))
     attach_group_decisions(run_id, groups)
-    workbook = Workbook(write_only=True)
-    sheet = workbook.create_sheet("Plan de unificación")
-    sheet.append(["PLAN PARA REVISIÓN TÉCNICA · NO MODIFICA ORACLE"])
-    sheet.append([])
-    headers = ["ID_CORRIDA", "ID_GRUPO", "ACCION", "TIPO_ORIGEN", "SBS_SCC_CODIGO_ORIGEN", "SBS_CODIGO_ORIGEN", "CODIGO_ORIGEN", "DESCRIPCION_ORIGEN", "UNIDAD_ORIGEN", "ESTADO_ORIGEN", "STOCK1_ORIGEN", "PRECIO_DE_VENTA_ORIGEN", "TIPO_MAESTRO", "SBS_SCC_CODIGO_MAESTRO", "SBS_CODIGO_MAESTRO", "CODIGO_MAESTRO", "DESCRIPCION_MAESTRO", "UNIDAD_MAESTRO", "ESTADO_MAESTRO", "STOCK1_MAESTRO", "PRECIO_DE_VENTA_MAESTRO", "PUNTAJE_MAXIMO", "DECIDIDO_POR", "FECHA_DECISION"]
-    sheet.append(headers)
+    mapping_headers = [
+        "TIPO_ORIGEN", "SBS_SCC_CODIGO_ORIGEN", "SBS_CODIGO_ORIGEN", "CODIGO_ORIGEN",
+        "DESCRIPCION_ORIGEN", "TIPO_MAESTRO", "SBS_SCC_CODIGO_MAESTRO",
+        "SBS_CODIGO_MAESTRO", "CODIGO_MAESTRO", "DESCRIPCION_MAESTRO", "ACCION",
+        "ID_CORRIDA", "ID_GRUPO", "ID_SUBGRUPO", "USUARIO_ASIGNADO", "DECIDIDO_POR",
+        "FECHA_DECISION", "PUNTAJE_SUBGRUPO",
+    ]
+    pending_headers = [
+        "ARTICULOS_CONFIRMADOS", "ARTICULOS_DEL_SUBGRUPO", "USUARIO_ASIGNADO",
+        "DECIDIDO_POR", "FECHA_DECISION", "ID_CORRIDA", "ID_GRUPO", "ID_SUBGRUPO",
+    ]
+    mapping_rows, pending_rows = [], []
     for group in groups:
-      for review in group.get("subgroups", []):
-        if review.get("decision") != "unify" or not review.get("canonical_pk"):
-            continue
-        canonical_tuple = item_pk_tuple(review["canonical_pk"])
-        selected_keys = {item_pk_tuple(pk) for pk in json.loads(review["members_json"])}
-        selected_members = [member for member in group["members"] if item_pk_tuple(member["pk"]) in selected_keys]
-        canonical_member = next((member for member in selected_members if item_pk_tuple(member["pk"]) == canonical_tuple), None)
-        if canonical_member is None:
-            continue
-        canonical = canonical_member["item"]
-        for member in selected_members:
-            source = member["item"]
-            role = "CONSERVAR" if item_pk_tuple(member["pk"]) == canonical_tuple else "REEMPLAZAR POR MAESTRO"
-            values = [run_id, review["id"], role]
-            values.extend(source.get(field) for field in ITEM_PRIMARY_KEY_FIELDS)
-            values.extend(source.get(field) for field in ("DESCRIPCION", "UNIDAD", "ESTADO", "STOCK1", "PRECIO_DE_VENTA"))
-            values.extend(canonical.get(field) for field in ITEM_PRIMARY_KEY_FIELDS)
-            values.extend([canonical.get(field) for field in ("DESCRIPCION", "UNIDAD", "ESTADO", "STOCK1", "PRECIO_DE_VENTA")])
-            values.extend([group["max_score"], review.get("saved_by"), review.get("saved_at")])
-            row = []
-            for index, value in enumerate(values):
-                cell = WriteOnlyCell(sheet, value=value)
-                if index not in (21, 23) and value is not None:
+        assignees = [(link.get("assignment") or {}).get("assigned_to") for link in group["links"]]
+        assigned_to = assignees[0] if assignees and all(
+            user and user.casefold() == assignees[0].casefold() for user in assignees
+        ) else ""
+        for review in group.get("subgroups", []):
+            if review.get("decision") != "unify":
+                continue
+            selected_keys = {item_pk_tuple(pk) for pk in json.loads(review["members_json"])}
+            selected_members = [member for member in group["members"] if item_pk_tuple(member["pk"]) in selected_keys]
+            canonical_tuple = item_pk_tuple(review["canonical_pk"]) if isinstance(review.get("canonical_pk"), dict) else None
+            canonical_member = next((member for member in selected_members if item_pk_tuple(member["pk"]) == canonical_tuple), None)
+            if canonical_member is None:
+                descriptions = []
+                for member in selected_members:
+                    key_text = " / ".join(f"{field}={member['pk'].get(field) or ''}" for field in ITEM_PRIMARY_KEY_FIELDS)
+                    descriptions.append(f"{member['item'].get('DESCRIPCION') or 'Sin descripción'} [{key_text}]")
+                member_summary = " · ".join(descriptions)
+                pending_rows.append([
+                    len(selected_members), member_summary, assigned_to, review.get("saved_by"),
+                    review.get("saved_at"), run_id, group["id"], review["id"],
+                ])
+                continue
+            canonical = canonical_member["item"]
+            subgroup_scores = [
+                float(link["score"]) for link in group["links"]
+                if item_pk_tuple(link["a_pk"]) in selected_keys and item_pk_tuple(link["b_pk"]) in selected_keys
+            ]
+            subgroup_score = max(subgroup_scores, default=0)
+            for member in selected_members:
+                if item_pk_tuple(member["pk"]) == canonical_tuple:
+                    continue
+                source = member["item"]
+                values = list(source.get(field) for field in ITEM_PRIMARY_KEY_FIELDS)
+                values.append(source.get("DESCRIPCION"))
+                values.extend(canonical.get(field) for field in ITEM_PRIMARY_KEY_FIELDS)
+                values.extend([canonical.get("DESCRIPCION"), "EMPATAR CON MAESTRO", run_id, group["id"], review["id"],
+                               assigned_to, review.get("saved_by"), review.get("saved_at"), subgroup_score])
+                mapping_rows.append(values)
+
+    workbook = Workbook()
+    mapping_sheet = workbook.active
+    mapping_sheet.title = "Empates a realizar"
+    pending_sheet = workbook.create_sheet("Pendientes de maestro")
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    title_fill = PatternFill("solid", fgColor="176B55")
+    for sheet, title, instruction, headers, rows in (
+        (mapping_sheet, "PLAN DE EMPATES · REQUIERE REVISIÓN TÉCNICA",
+         "Cada fila indica qué artículo origen se debe asociar a la clave del maestro. Este reporte no ejecuta cambios en Oracle.", mapping_headers, mapping_rows),
+        (pending_sheet, "SUBGRUPOS PENDIENTES DE ARTÍCULO MAESTRO",
+         "Confirma el artículo que se conservará en cada subgrupo antes de preparar todos los empates.", pending_headers, pending_rows),
+    ):
+        sheet.sheet_view.showGridLines = False
+        sheet.append([title])
+        sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+        sheet.append([instruction])
+        sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(headers))
+        sheet.append(headers)
+        sheet.row_dimensions[1].height = 28
+        sheet.row_dimensions[2].height = 34
+        sheet.row_dimensions[3].height = 42
+        sheet[1][0].font = Font(bold=True, size=15, color="FFFFFF")
+        sheet[1][0].fill = title_fill
+        sheet[2][0].font = Font(italic=True, color="365854")
+        sheet[2][0].alignment = Alignment(wrap_text=True, vertical="center")
+        for cell in sheet[3]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = header_fill
+            cell.alignment = Alignment(wrap_text=True, vertical="center")
+        if sheet is mapping_sheet:
+            for column_index in range(6, 11):
+                sheet.cell(row=3, column=column_index).fill = PatternFill("solid", fgColor="176B55")
+        for row_values in rows:
+            row_index = sheet.max_row + 1
+            for column_index, value in enumerate(row_values, 1):
+                cell = sheet.cell(row=row_index, column=column_index, value=value)
+                cell.alignment = Alignment(vertical="top", wrap_text=column_index in (5, 10) if sheet is mapping_sheet else column_index == 2)
+                if sheet is mapping_sheet and 6 <= column_index <= 10:
+                    cell.fill = PatternFill("solid", fgColor="EAF6EF")
+                text_columns = (1, 2, 3, 4, 6, 7, 8, 9, 12, 13, 14) if sheet is mapping_sheet else (6, 7, 8)
+                if column_index in text_columns and value is not None:
+                    cell.value = str(value)
                     cell.number_format = "@"
-                    if isinstance(value, str):
-                        cell.data_type = "s"
-                row.append(cell)
-            sheet.append(row)
+                if sheet is mapping_sheet and column_index == 18:
+                    cell.number_format = '0.0"%"'
+            long_text = max((len(str(value)) for value in row_values if value is not None), default=0)
+            sheet.row_dimensions[row_index].height = min(120, max(34, 15 * ((long_text + 89) // 90)))
+        sheet.freeze_panes = "A4"
+        sheet.auto_filter.ref = f"A3:{excel_column(len(headers))}{max(3, sheet.max_row)}"
+    for column, width in {"A": 14, "B": 27, "C": 23, "D": 17, "E": 42, "F": 14, "G": 27, "H": 23, "I": 17, "J": 42, "K": 24, "L": 35, "M": 27, "N": 27, "O": 24, "P": 24, "Q": 23, "R": 18}.items():
+        mapping_sheet.column_dimensions[column].width = width
+    for column, width in {"A": 35, "B": 27, "C": 27, "D": 20, "E": 90, "F": 24, "G": 24, "H": 23}.items():
+        pending_sheet.column_dimensions[column].width = width
+    mapping_sheet.page_setup.orientation = "landscape"
+    pending_sheet.page_setup.orientation = "landscape"
+    pending_sheet.page_setup.fitToWidth = 1
     stream = BytesIO()
     workbook.save(stream)
     return stream.getvalue()
@@ -808,7 +881,8 @@ def load_run_pair(run_id, ordinal):
 LEGACY_ASSIGNMENT_HEADERS = ["ORDEN", "ID_CORRIDA"] + [f"{field}_{side}" for side in ("A", "B") for field in (*ITEM_PRIMARY_KEY_FIELDS, "DESCRIPCION", "PRECIO_DE_VENTA")] + ["USUARIO_ORACLE"]
 ASSIGNMENT_HEADERS = ["ORDEN", "ID_CORRIDA", "ID_GRUPO"] + LEGACY_ASSIGNMENT_HEADERS[2:]
 LEGACY_GROUP_ASSIGNMENT_HEADERS = ["ID_CORRIDA", "ID_GRUPO", "TIPO", "CANTIDAD_ARTICULOS", "SIMILITUD_MINIMA", "SIMILITUD_MAXIMA", "USUARIO_ORACLE"]
-GROUP_ASSIGNMENT_HEADERS = ["USUARIO_ORACLE", "ID_CORRIDA", "ID_GRUPO", "TIPO", "CANTIDAD_ARTICULOS", "RESUMEN_ARTICULOS", "SIMILITUD_MINIMA", "SIMILITUD_MAXIMA"]
+PREVIOUS_GROUP_ASSIGNMENT_HEADERS = ["USUARIO_ORACLE", "ID_CORRIDA", "ID_GRUPO", "TIPO", "CANTIDAD_ARTICULOS", "RESUMEN_ARTICULOS", "SIMILITUD_MINIMA", "SIMILITUD_MAXIMA"]
+GROUP_ASSIGNMENT_HEADERS = ["USUARIO_ORACLE", "PK_TIPO_REFERENCIA", "PK_SBS_SCC_CODIGO_REFERENCIA", "PK_SBS_CODIGO_REFERENCIA", "PK_CODIGO_REFERENCIA", "ID_GRUPO", "CANTIDAD_ARTICULOS", "RESUMEN_ARTICULOS", "SIMILITUD_MINIMA", "SIMILITUD_MAXIMA", "ID_CORRIDA"]
 GROUP_ITEM_HEADERS = ["ID_CORRIDA", "ID_GRUPO", *ITEM_PRIMARY_KEY_FIELDS, "DESCRIPCION", "UNIDAD", "ESTADO", "STOCK1", "PRECIO_DE_VENTA"]
 
 
@@ -841,7 +915,7 @@ def assignment_workbook(run_id):
     sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(GROUP_ASSIGNMENT_HEADERS))
     sheet.append(["Una fila representa un grupo completo. Elige un usuario Oracle en USUARIO_ORACLE; los grupos sin usuario conservan su asignación actual."])
     sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(GROUP_ASSIGNMENT_HEADERS))
-    sheet.append(["Solo edita USUARIO_ORACLE (columna A). Los demás datos están protegidos para consulta. Articulos contiene el detalle de cada grupo."])
+    sheet.append(["Solo edita USUARIO_ORACLE (columna A). La clave corresponde al primer artículo de Articulos y ayuda a identificar su bodega o pertenencia; los demás campos son de consulta."])
     sheet.merge_cells(start_row=3, start_column=1, end_row=3, end_column=len(GROUP_ASSIGNMENT_HEADERS))
     sheet.append(GROUP_ASSIGNMENT_HEADERS)
     user_sheet.append(["USUARIO_ORACLE"])
@@ -863,6 +937,7 @@ def assignment_workbook(run_id):
     sheet.row_dimensions[1].height = 26
     sheet.row_dimensions[2].height = 32
     sheet.row_dimensions[3].height = 25
+    sheet.row_dimensions[4].height = 48
     sheet[1][0].font = Font(bold=True, size=16, color="FFFFFF")
     sheet[1][0].fill = PatternFill("solid", fgColor="176B55")
     sheet[2][0].font = Font(italic=True, color="365854")
@@ -882,17 +957,20 @@ def assignment_workbook(run_id):
         summary = " · ".join(descriptions)
         if len(summary) > 500:
             summary = summary[:497] + "..."
-        assignment_values = [reviewer, run_id, group["id"], group["members"][0]["item"].get("TIPO"),
-                             len(group["members"]), summary, group["min_score"], group["max_score"]]
+        reference_pk = group["members"][0]["pk"]
+        assignment_values = [reviewer]
+        assignment_values.extend(reference_pk.get(field) for field in ITEM_PRIMARY_KEY_FIELDS)
+        assignment_values.extend((group["id"], len(group["members"]), summary,
+                                  group["min_score"], group["max_score"], run_id))
         assignment_cells = []
         for index, value in enumerate(assignment_values):
             cell = WriteOnlyCell(sheet, value=value)
-            if index in (0, 1, 2, 3) and value is not None:
+            if index in (0, 1, 2, 3, 4, 5, 10) and value is not None:
                 cell.data_type = "s"
                 cell.number_format = "@"
-            if index in (6, 7):
+            if index in (8, 9):
                 cell.number_format = '0.0"%"'
-            if index == 5:
+            if index == 7:
                 cell.alignment = Alignment(vertical="top", wrap_text=True)
             if index == 0:
                 cell.protection = Protection(locked=False)
@@ -924,8 +1002,8 @@ def assignment_workbook(run_id):
         sheet.add_data_validation(validation)
         validation.add(f"A5:A{len(groups) + 4}")
     sheet.freeze_panes = "B5"
-    sheet.auto_filter.ref = f"A4:H{len(groups) + 4}"
-    for column, width in {"A": 26, "B": 36, "C": 28, "D": 12, "E": 19, "F": 58, "G": 20, "H": 20}.items():
+    sheet.auto_filter.ref = f"A4:{excel_column(len(GROUP_ASSIGNMENT_HEADERS))}{len(groups) + 4}"
+    for column, width in {"A": 24, "B": 15, "C": 28, "D": 26, "E": 20, "F": 28, "G": 18, "H": 46, "I": 17, "J": 17, "K": 36}.items():
         sheet.column_dimensions[column].width = width
     protection_password = secrets.token_urlsafe(9)
     for protected_sheet in (sheet, details, user_sheet):
@@ -965,7 +1043,7 @@ def import_assignment_workbook(run_id, contents, assigned_by):
                 header = candidate
                 workbook.close()
                 return import_legacy_assignment_workbook(run_id, contents, assigned_by)
-            if candidate in (GROUP_ASSIGNMENT_HEADERS, LEGACY_GROUP_ASSIGNMENT_HEADERS):
+            if candidate in (GROUP_ASSIGNMENT_HEADERS, PREVIOUS_GROUP_ASSIGNMENT_HEADERS, LEGACY_GROUP_ASSIGNMENT_HEADERS):
                 header, header_row = candidate, line_number
                 break
         if header is None:
@@ -1424,7 +1502,7 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/"):
             comparison_get = (
                 path in ("/api/v1/session", "/api/v1/items/types", "/api/v1/items/compare/runs")
-                or re.fullmatch(r"/api/v1/items/compare/[0-9a-f]{32}(?:/groups|/assignments/template)?", path)
+                or re.fullmatch(r"/api/v1/items/compare/[0-9a-f]{32}(?:/groups|/assignments/template|/merge-plan)?", path)
             )
             if not comparison_get:
                 self.send_json(404, {"error": "Esta aplicación está habilitada solo para comparar descripciones."})
@@ -1456,6 +1534,24 @@ class Handler(BaseHTTPRequestHandler):
             if decision_filter not in ("pending", "unify", "skip", "manual", "all"):
                 decision_filter = "pending"
             self.items_compare_groups(groups_match.group(1), page, decision_filter)
+            return
+        merge_plan_match = re.fullmatch(r"/api/v1/items/compare/([0-9a-f]{32})/merge-plan", path)
+        if merge_plan_match:
+            if request_context.username.casefold() != COMPARISON_RUNNER_USER:
+                self.send_json(403, {"error": "Solo la cuenta responsable puede descargar el plan de empates."})
+                return
+            contents = group_merge_plan_workbook(merge_plan_match.group(1))
+            if contents is None:
+                self.send_json(404, {"error": "La corrida no está disponible."})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            self.send_header("Content-Disposition", f"attachment; filename=SIS_ITEMS_PLAN_EMPATES_{merge_plan_match.group(1)}.xlsx")
+            self.send_header("Content-Length", str(len(contents)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(contents)
             return
         assignment_template_match = re.fullmatch(r"/api/v1/items/compare/([0-9a-f]{32})/assignments/template", path)
         if assignment_template_match:
@@ -1756,11 +1852,20 @@ class Handler(BaseHTTPRequestHandler):
         member_pks = [member_by_key[key] for key in selected_keys]
         members_json = json.dumps(member_pks, ensure_ascii=False, sort_keys=True)
         subgroup_id = hashlib.sha256((group_id + members_json).encode("utf-8")).hexdigest()[:24]
-        if canonical_pk not in (None, {}):
-            self.send_json(400, {"error": "La clave maestra se definirá en una etapa posterior."})
+        canonical_tuple = None
+        if decision == "unify" and canonical_pk not in (None, {}):
+            if not isinstance(canonical_pk, dict) or any(field not in canonical_pk for field in ITEM_PRIMARY_KEY_FIELDS):
+                self.send_json(400, {"error": "Selecciona una clave primaria completa para el artículo maestro."})
+                return
+            canonical_tuple = item_pk_tuple(canonical_pk)
+            if canonical_tuple not in selected_keys:
+                self.send_json(400, {"error": "El artículo maestro debe pertenecer al subgrupo confirmado."})
+                return
+        elif decision != "unify" and canonical_pk not in (None, {}):
+            self.send_json(400, {"error": "Solo un subgrupo confirmado puede tener artículo maestro."})
             return
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        canonical_json = json.dumps(canonical_pk, ensure_ascii=False) if canonical_pk else None
+        canonical_json = json.dumps(canonical_pk, ensure_ascii=False, sort_keys=True) if canonical_tuple else None
         reopened_all = False
         with sqlite3.connect(ITEM_REVIEW_DB) as db:
             db.execute("BEGIN IMMEDIATE")
@@ -1781,8 +1886,15 @@ class Handler(BaseHTTPRequestHandler):
                     remaining_keys = existing_keys - set(selected_keys)
                     if len(remaining_keys) >= 2:
                         remaining_pks = [member_by_key[key] for key in sorted(remaining_keys)]
-                        db.execute("UPDATE item_group_decisions SET members_json=? WHERE run_id=? AND group_id=?",
-                                   (json.dumps(remaining_pks, ensure_ascii=False, sort_keys=True), run_id, existing_id))
+                        existing_canonical = db.execute(
+                            "SELECT canonical_pk FROM item_group_decisions WHERE run_id=? AND group_id=?",
+                            (run_id, existing_id),
+                        ).fetchone()
+                        retained_canonical = existing_canonical[0] if existing_canonical else None
+                        if retained_canonical and item_pk_tuple(json.loads(retained_canonical)) not in remaining_keys:
+                            retained_canonical = None
+                        db.execute("UPDATE item_group_decisions SET members_json=?,canonical_pk=? WHERE run_id=? AND group_id=?",
+                                   (json.dumps(remaining_pks, ensure_ascii=False, sort_keys=True), retained_canonical, run_id, existing_id))
                     else:
                         # A one-member remainder cannot stay confirmed as a same-item subgroup.
                         reopened_all = True
@@ -1796,6 +1908,8 @@ class Handler(BaseHTTPRequestHandler):
                 rows = db.execute("SELECT group_id,decision,members_json FROM item_group_decisions WHERE run_id=? AND source_group_id=?", (run_id, group_id)).fetchall()
                 for existing_id, existing_decision, existing_json in rows:
                     existing_keys = {item_pk_tuple(pk) for pk in json.loads(existing_json)}
+                    if existing_id == subgroup_id and existing_decision == "unify" and existing_keys == set(selected_keys):
+                        continue
                     if existing_decision in ("unify", "skip") and existing_keys.intersection(selected_keys):
                         self.send_json(409, {"error": "Uno o más artículos ya tienen una decisión guardada. Reábrela primero."})
                         return
