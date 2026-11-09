@@ -6,6 +6,7 @@ Type=simple
 WorkingDirectory=%h/codex_projects/zig_proyecto
 EnvironmentFile=%h/codex_projects/zig_proyecto/.env
 Environment=PYTHONUNBUFFERED=1
+Environment=PATH=%h/miniconda3/bin:%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 UMask=0077
 ExecStart=%h/miniconda3/bin/python3 %h/codex_projects/zig_proyecto/scripts/serve-web-probe.py
 Restart=always
