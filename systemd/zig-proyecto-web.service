@@ -1,0 +1,15 @@
+[Unit]
+Description=Zig Proyecto Oracle Parquet local web probe
+
+[Service]
+Type=simple
+WorkingDirectory=%h/codex_projects/zig_proyecto
+EnvironmentFile=%h/codex_projects/zig_proyecto/.env
+Environment=PYTHONUNBUFFERED=1
+UMask=0077
+ExecStart=%h/miniconda3/bin/python3 %h/codex_projects/zig_proyecto/scripts/serve-web-probe.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
